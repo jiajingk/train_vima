@@ -226,7 +226,7 @@ def measure_unweighted_loss(
     return float(epoch_loss)
 
 
-class VimaPolicyDDP(torch.nn.Module):
+class VimaPolicyWraper(torch.nn.Module):
     def __init__(
         self,
         *,
@@ -253,7 +253,7 @@ BatchLoss = Tensor
 LogRecord = Dict[str, float]
 
 def batch_forward(
-        policy: VimaPolicyDDP, 
+        policy: VimaPolicyWraper, 
         data: List[NormalizedTraj],
         criterion: Criterion,
     ) -> Tuple[BatchLoss, List[LogRecord]]:
@@ -303,7 +303,7 @@ def batch_forward(
 
 
 def validate(
-        ddp_policy: VimaPolicyDDP,
+        ddp_policy: VimaPolicyWraper,
         dataloader: DataLoader, 
         criterion: torch.nn.CrossEntropyLoss,
         epoch_id: int,
@@ -352,7 +352,7 @@ def records_to_trajs(
 
 
 def train_one_epoch_ddp(
-        ddp_policy: VimaPolicyDDP,
+        ddp_policy: VimaPolicyWraper,
         dataloader: DataLoader, 
         criterion: torch.nn.CrossEntropyLoss,
         optimizer: torch.optim.AdamW,
@@ -426,7 +426,7 @@ def main(model_repo_folder):
     )
     assert optimizer.__class__.__name__ == get_optimizer_param()["optimizer_name"]
     
-    ddp_policy = VimaPolicyDDP(single_process_policy=policy, device='cuda')
+    ddp_policy = VimaPolicyWraper(single_process_policy=policy, device='cuda')
     for epoch in range(inital_epoch + 1, epochs):
         weighted_epoch_loss, epoch_logs = train_one_epoch_ddp(
             ddp_policy,
