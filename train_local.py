@@ -352,14 +352,14 @@ def records_to_trajs(
     raise AssertionError(f'unknown source {get_dataset_param()["source"]}')
 
 
-def train_one_epoch_ddp(
-        ddp_policy: VimaPolicyWraper,
+def train_one_epoch(
+        policy: VimaPolicyWraper,
         dataloader: DataLoader, 
         criterion: torch.nn.CrossEntropyLoss,
         optimizer: torch.optim.AdamW,
         epoch_id: int,
     ) -> Tuple[float, List[LogRecord]]:
-    ddp_policy.train()
+    policy.train()
     epoch_logs: List[LogRecord] = []
     epoch_loss = 0
     for batch_id, records in (pbar := tqdm(enumerate(dataloader))):
@@ -367,7 +367,7 @@ def train_one_epoch_ddp(
         curr_lr = update_and_get_lr(optimizer, batch_id, epoch_id)
         optimizer.zero_grad()
         batch_loss, batch_logs = batch_forward(
-            ddp_policy,
+            policy,
             trajs,
             criterion
         )
@@ -381,7 +381,7 @@ def train_one_epoch_ddp(
         ]
         batch_loss.backward()
         torch.nn.utils.clip_grad_norm_(
-            ddp_policy.parameters(),
+            policy.parameters(),
             get_clip_grad_norm()
         )
         optimizer.step()
@@ -429,7 +429,7 @@ def main(model_repo_folder):
     
     ddp_policy = VimaPolicyWraper(single_process_policy=policy, device='cuda')
     for epoch in range(inital_epoch + 1, epochs):
-        weighted_epoch_loss, epoch_logs = train_one_epoch_ddp(
+        weighted_epoch_loss, epoch_logs = train_one_epoch(
             ddp_policy,
             train_loader,
             criterion,
