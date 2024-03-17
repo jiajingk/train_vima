@@ -341,9 +341,10 @@ def records_to_trajs(
         records: List[Union[str, Tuple[str, str]]]
     ) -> List[NormalizedTraj]:
     if get_dataset_param()["source"] == "local":
+        task_ids, task_names = records
         return [
             load_normalized_traj(int(task_id), task_name) 
-                for (task_id, task_name) in records
+                for (task_id, task_name) in zip(task_ids, task_names)
         ]
     if get_dataset_param()["source"] == "s3://vima":
         raw_records = load_batch(records, len(records))
@@ -430,7 +431,7 @@ def main(model_repo_folder):
     for epoch in range(inital_epoch + 1, epochs):
         weighted_epoch_loss, epoch_logs = train_one_epoch_ddp(
             ddp_policy,
-            train_loader, 
+            train_loader,
             criterion,
             optimizer,
             epoch,

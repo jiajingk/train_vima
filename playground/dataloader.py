@@ -377,7 +377,7 @@ def get_local_dataloader(
         )
     ]
     dataset = TrajDataset(train_samples)
-    return DataLoader(dataset, batch_size=train_param['local_batch_size'], shuffle=True)
+    return DataLoader(dataset, batch_size=train_param['local_batch_size'], shuffle=True), None
 
 
 def get_dataloader(

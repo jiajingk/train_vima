@@ -10,8 +10,6 @@ pybullet
 gym==0.21.0
 einops
 dm-tree
-torch
-torchvision
 psutil
 opencv-python
 matplotlib
@@ -25,3 +23,7 @@ black
 av
 importlib_resources
 numpy==1.23.1
+pandas
+tensorflow-cpu
+python-dotenv
+boto3
