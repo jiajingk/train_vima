@@ -1,6 +1,8 @@
 from __future__ import annotations
 import sys
-sys.path.append(r'C:\Users\aquab\projects\fudan_research\vima_ddp')
+from dotenv import dotenv_values
+userdata = dotenv_values(".env")
+sys.path.append(userdata["ABSOLUTE_PATH_OF_WORKING_DIR"])
 import multiprocessing
 import os
 import pickle
