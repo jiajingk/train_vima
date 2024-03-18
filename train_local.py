@@ -56,6 +56,8 @@ import pandas as pd
 import math
 import uuid
 
+BatchLoss = Tensor
+LogRecord = Dict[str, float]
 
 DDP_PARAM: Optional[DDPParam] = None
 
@@ -79,33 +81,31 @@ def get_optimizer_param() -> OptimizerParam:
 
 def get_dataset_param() -> DatasetParam:
     return  {
-        "data_pct_usage": 0.1,
-        "total_data_size_per_task": 256,
-        "validation_pct": 0.1,
+        "data_pct_usage": 1.0,
+        "total_data_size_per_task": 4,
+        "validation_pct": 0.25,
         "source": "local",
         "tasks": [
-            'visual_manipulation',
+            'follow_order',
             'manipulate_old_neighbor',
             'novel_adj',
             'novel_noun',
             'pick_in_order_then_restore',
             'rearrange',
             'rearrange_then_restore',
-            'same_profile',
             'rotate',
-            'scene_understanding',
-            'simple_manipulation',
+            'same_shape',
             'sweep_without_exceeding',
-            'follow_order',
-            'twist'
+            'twist',
+            'visual_manipulation'
         ]
     }
 
 
 def get_train_param() -> TrainParam:
     return {
-        "total_epoch": 300,
-        "local_batch_size": 32,
+        "total_epoch": 10,
+        "local_batch_size": 8,
         "distributed": False,
         "model_size": '2M'
     }
@@ -208,6 +208,7 @@ def measure_unweighted_loss(
         logs: DataFrameTrainLogSchema, 
         epoch_id: int,
     ) -> float:
+    logs = pd.DataFrame(data=logs)
     unweighted_sample_cols = [
         col for col in logs.columns 
             if 'unweigted_sample_loss' in col
@@ -253,8 +254,7 @@ class VimaPolicyWraper(torch.nn.Module):
         )
         return batch_preds
 
-BatchLoss = Tensor
-LogRecord = Dict[str, float]
+
 
 def batch_forward(
         policy: VimaPolicyWraper, 
@@ -333,7 +333,7 @@ def validate(
         ]
         epoch_logs += batch_logs
         epoch_loss += batch_loss.item()
-        pbar.set_description(f"valid {epoch_id}: {batch_loss.item()}")
+        pbar.set_description(f"valid {epoch_id}: weighted loss {batch_loss.item()}")
     return epoch_loss / (batch_id + 1), [
         flatten_dict(
             {"validation": log} 
@@ -391,7 +391,7 @@ def train_one_epoch(
         optimizer.step()
         epoch_logs += batch_logs
         epoch_loss += batch_loss.item()        
-        pbar.set_description(f"train {epoch_id}: {batch_loss.item()}")
+        pbar.set_description(f"train {epoch_id}: weighted loss {batch_loss.item()}")
     epoch_loss /= (batch_id + 1)
     return epoch_loss, epoch_logs
 
@@ -402,15 +402,41 @@ def get_parent_model_path(model_repo_folder: str) -> Tuple[str, bool]:
         model_name = get_train_param()["model_size"]
         return os.path.join('.', f'{model_name}.ckpt'), True
     else:
-        model_name = model_weight_locations[0].split('/')[-1].split('.')[0]
-        return os.path.join(model_repo_folder, f'{model_name}.ckpt'), False
+        return model_weight_locations[0], False
 
+
+def write_log_to_csv(logs: List[LogRecord], run_id: str, log_type: str):
+    log_file_path = f"{log_type}_{run_id}.csv"
+    log_df = pd.DataFrame(data=logs)
+    if not os.path.exists(log_file_path):
+        log_df.to_csv(log_file_path, index=False)
+    else:
+        log_df.to_csv(log_file_path, mode='a', header=False, index=False)
+
+def write_model_checkpoint(
+        run_id: str,
+        epoch: int,
+        optimizer_state_dict: Dict,
+        policy_state_dict: Dict,
+        cfg: Dict
+    ):
+    today: str = datetime.today().strftime('%Y-%m-%d')
+    save_file_name = f'{run_id}_{epoch}_{today}.ckpt'
+    path = os.path.join('saved_model', save_file_name)
+    train_history: TrainHistory = {
+        "last_epoch": epoch,
+        "optimizer_state_dict": optimizer_state_dict
+    }
+    ckpt = {
+        'cfg': cfg,
+        'state_dict': policy_state_dict,
+        'history': train_history
+    }
+    torch.save(ckpt, path)
 
 def main(model_repo_folder):
-    run_id: str = uuid.uuid4().hex
-    today: str = datetime.today().strftime('%Y-%m-%d')
-    train_log_csv_name = f'train_{run_id}_{today}_log.csv'
-    valid_log_csv_name = f'valid_{run_id}_{today}_log.csv'
+    today: str = datetime.today().strftime('%Y-%m-%d-%H-%M')
+    run_id: str = f"{today}_{uuid.uuid4().hex[:8]}"
     train_loader, valid_loader = get_dataloader(
         get_train_param(),
         get_dataset_param(),
@@ -422,7 +448,7 @@ def main(model_repo_folder):
     if from_scratch is True:
         inital_epoch = 0
     else:
-        inital_epoch = train_history["last_epoch"]
+        inital_epoch = train_history["last_epoch"] + 1
     criterion = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.AdamW(
         policy.parameters(), 
@@ -430,58 +456,51 @@ def main(model_repo_folder):
         weight_decay=get_optimizer_param()["weight_decay"]
     )
     assert optimizer.__class__.__name__ == get_optimizer_param()["optimizer_name"]
-    
     ddp_policy = VimaPolicyWraper(single_process_policy=policy, device='cuda')
-    for epoch in range(inital_epoch + 1, epochs):
-        weighted_epoch_loss, epoch_logs = train_one_epoch(
+    for epoch in range(inital_epoch, epochs):
+        weighted_train_loss, train_logs = train_one_epoch(
             ddp_policy,
             train_loader,
             criterion,
             optimizer,
             epoch,
         )
-        if epoch % 50 == 0 and epoch > 0:
-            save_file_name = f'{run_id}_{epoch}_{today}.ckpt'
-            path = os.path.join('saved_model', save_file_name)
-            train_history: TrainHistory = {
-                "last_epoch": epoch,
-                "optimizer_state_dict": optimizer.state_dict()
-            }
-            ckpt = {
-                'cfg': cfg,
-                'state_dict': policy.state_dict(),
-                'history': train_history
-            }
-            torch.save(ckpt, path)
-        logs = pd.DataFrame(data=epoch_logs)
-        if epoch == 0:
-            logs.to_csv(train_log_csv_name, index=False)
-        else:
-            logs.to_csv(train_log_csv_name, mode='a', header=False, index=False)
-        print("train", measure_unweighted_loss(logs, epoch))
-        weighted_epoch_loss, valid_logs = validate(
-            ddp_policy,
-            valid_loader, 
-            criterion,
-            epoch,
-            get_current_lr(optimizer)
+        if epoch % 5 == 0 and epoch > 0:
+            write_model_checkpoint(
+                run_id, 
+                epoch, 
+                optimizer.state_dict(),
+                policy.state_dict(),
+                cfg
+            )
+        write_log_to_csv(train_logs, run_id, 'train')
+        print(
+            "train", 
+            f"unweighted_loss: {measure_unweighted_loss(train_logs, epoch)}", 
+            f"weighted_loss: {weighted_train_loss}"
         )
-        logs = pd.DataFrame(data=valid_logs)
-        if epoch == 0:
-            logs.to_csv(valid_log_csv_name, index=False)
-        else:
-            logs.to_csv(valid_log_csv_name, mode='a', header=False, index=False)
-        print("valid", measure_unweighted_loss(logs, epoch))
-    save_file_name = f'{run_id}_{epoch}_{today}.ckpt'
-    path = os.path.join('saved_model', save_file_name)
-    ckpt = {
-        'cfg': cfg,
-        'state_dict': policy.state_dict(),
-        'optimizer_state_dict': optimizer.state_dict(),
-        'epoch': epoch
-    }
-    torch.save(ckpt, path)
+        if valid_loader is not None:
+            weighted_valid_loss, valid_logs = validate(
+                ddp_policy,
+                valid_loader, 
+                criterion,
+                epoch,
+                get_current_lr(optimizer)
+            )
+            write_log_to_csv(valid_logs, run_id, 'valid')
+            print(
+            "valid", 
+            f"unweighted_loss: {measure_unweighted_loss(valid_logs, epoch)}", 
+            f"weighted_loss: {weighted_valid_loss}"
+        )
+    write_model_checkpoint(
+        run_id, 
+        epoch, 
+        optimizer.state_dict(),
+        policy.state_dict(),
+        cfg
+    )
     
 
 if __name__ == "__main__":
-    main(os.path.join('.', 'parent_model', '*.ckpt'))
+    main(os.path.join('.', 'parent_model'))

@@ -1,8 +1,8 @@
 task_selection: null
 modalities: ["rgb", "segm"]
-num_episodes_per_task: 50000
+num_episodes_per_task: 4
 success_only: true
-save_path: ???
+save_path: tasks
 parallel: true
 seed: 0
 num_save_digits: 6

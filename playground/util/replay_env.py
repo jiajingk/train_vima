@@ -90,7 +90,10 @@ class ReplayEnv:
         self.time_step: int = -1
         self.task_step: int = -1
         self.global_seed: int = 0
+        if folder == 'same_profile':
+            folder = 'same_shape'
         self.tasks_source_folder = folder
+        
         if os.path.exists(os.path.join(folder, 'metadata.pkl')):
             with open(os.path.join(folder, 'metadata.pkl'), 'rb') as f:
                 self.meta_data: TaskMetaData = pickle.load(f)
@@ -147,10 +150,11 @@ class ReplayEnv:
         return self.current_task["meta_info"]["prompt_assets"]
     
     def set_traj(self, task_id: int) -> ObsData:
+        
         self.time_step = 0
         self.task_step = task_id
         if self.task_step >= self.total_task:
-            raise ValueError("No more tasks")
+            raise ValueError(f"Try to get {task_id} {self.tasks_source_folder}, but no more tasks")
         self.action_history[self.task_step] = []
         return any_slice(self.current_task["obs"], np.s_[self.time_step])
 

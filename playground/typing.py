@@ -385,6 +385,7 @@ TaskName = Literal[
     'rearrange',
     'rearrange_then_restore',
     'same_profile',
+    'same_shape',
     'rotate',
     'scene_understanding',
     'simple_manipulation',
@@ -518,11 +519,6 @@ class OptimizerParam(TypedDict):
     optimizer_name: str
 
 
-class DatasetParam(TypedDict):
-    data_pct_usage: float
-    validation_pct: float
-    total_data_size_per_task: float
-
 
 class DDPParam(TypedDict):
     world_size: int
@@ -537,7 +533,7 @@ DatasetSource = Literal['s3://vima', 'local']
 class DatasetParam(TypedDict):
     data_pct_usage: float
     validation_pct: float
-    total_task_class: int
+    total_data_size_per_task: int
     tasks: List[TaskName]
     source: DatasetSource
 

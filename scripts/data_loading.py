@@ -1,8 +1,4 @@
 import os
-import sys
-from dotenv import dotenv_values
-userdata = dotenv_values(".env")
-sys.path.append(userdata["ABSOLUTE_PATH_OF_WORKING_DIR"])
 import argparse
 import pickle
 import numpy as np
