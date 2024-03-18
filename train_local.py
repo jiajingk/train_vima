@@ -18,9 +18,13 @@ from playground.util.reduce import (
     reduce_traj_loss_in_time_axis
 )
 from playground.dataloader import (
-    load_batch, 
-    deseralize, 
     get_dataloader
+)
+from playground.source.s3 import (
+    load_batch, 
+)
+from playground.source.tf_record import (
+    deseralize,
 )
 from playground.typing import (
     NormalizedTraj,
