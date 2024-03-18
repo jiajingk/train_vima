@@ -60,7 +60,7 @@ To get the dataset, you have 3 options
 2. generate the dataset through `scripts/data_generation/run.py`
 3. write your own dataloader logic in `get_dataloader` function (located at `playground\dataloader.py`) to retrieve from remote source such as AWS S3 
 
-The quickest way to get start is generate the dataset locally. It can be done by run the following commands 
+The quickest way to get start is option 2. It can be done by run the following commands 
 ```
 mkdir tasks
 python scripts/data_generation/run.py
