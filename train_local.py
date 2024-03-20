@@ -2,11 +2,10 @@ from playground.util.replay_env import (
     normalize_traj, 
     load_normalized_traj
 )
-from playground.util.policy import get_policy_and_cfg
+from playground.util.policy import get_policy_and_cfg, VimaPolicyWraper
 from playground.util.train import ( 
     measure_traj_individual_loss,
     reduce_weighted_step_total_loss,
-    forward,
     freeze_t5_except_last_2_layer,
 )
 from playground.util.loss_scaling import (
@@ -28,11 +27,6 @@ from playground.source.tf_record import (
 )
 from playground.typing import (
     NormalizedTraj,
-    Device,
-    VIMAPolicy,
-    PredDist, 
-    Action, 
-    ForwardMetaData,
     Tensor,
     Criterion,
     DataFrameTrainLogSchema,
@@ -46,7 +40,6 @@ from playground.typing import (
 from playground.util.prompt import get_task_class
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-from vima.policy import VIMAPolicy
 from typing import Tuple, List, Dict, Optional, Union
 from datetime import datetime
 from glob import glob
@@ -78,6 +71,7 @@ def get_optimizer_param() -> OptimizerParam:
         "optimizer_name": "AdamW",
         "weight_decay": 0.0
     }
+
 
 def get_dataset_param() -> DatasetParam:
     return  {
@@ -111,6 +105,17 @@ def get_train_param() -> TrainParam:
     }
 
 
+def get_ddp_param() -> DDPParam:
+    if DDP_PARAM is None:
+        raise ValueError("unable to retrieve ddp param")
+    return {
+        "local_rank": int(DDP_PARAM.local_rank),
+        "master_ip": str(DDP_PARAM.master_ip),
+        "master_port": str(DDP_PARAM.master_port),
+        "world_size": int(DDP_PARAM.world_size)
+    }
+
+
 def flatten_dict(d: Dict[str, Union[str, int, float]], parent_key='', sep='__'):
     items = []
     for k, v in d.items():
@@ -128,17 +133,6 @@ def get_clip_grad_norm() -> float:
 
 def get_local_batch_size() -> int:
     return get_train_param()["local_batch_size"]
-
-
-def get_ddp_param() -> DDPParam:
-    if DDP_PARAM is None:
-        raise ValueError("unable to retrieve ddp param")
-    return {
-        "local_rank": int(DDP_PARAM.local_rank),
-        "master_ip": str(DDP_PARAM.master_ip),
-        "master_port": str(DDP_PARAM.master_port),
-        "world_size": int(DDP_PARAM.world_size)
-    }
 
 
 def get_current_lr(optimizer: torch.optim.AdamW) -> float:
@@ -208,22 +202,20 @@ def measure_unweighted_loss(
         logs: DataFrameTrainLogSchema, 
         epoch_id: int,
     ) -> float:
-    logs = pd.DataFrame(data=logs)
+    log_df = pd.DataFrame(data=logs)
+    new_columns = {
+        col: col.replace('validation__', '') 
+            for col in log_df.columns if col.startswith('validation__')
+    }
+    log_df = log_df.rename(columns=new_columns)
     unweighted_sample_cols = [
-        col for col in logs.columns 
+        col for col in log_df.columns 
             if 'unweigted_sample_loss' in col
     ]
-    desired_cols = logs.columns.isin(unweighted_sample_cols)
-    epoch_id_col_candidates = [
-        col for col in logs.columns 
-            if 'epoch_id' in col
-    ]
-    if len(epoch_id_col_candidates) == 0:
-        raise ValueError(f"could not find epoch_id column in {logs.columns }")
-    epoch_id_col = epoch_id_col_candidates[0]
+    desired_cols = log_df.columns.isin(unweighted_sample_cols)
     epoch_loss = ( 
-        logs
-        .loc[logs[epoch_id_col] == epoch_id]
+        log_df
+        .loc[log_df['epoch_id'] == epoch_id]
         .iloc[:, desired_cols]
         .sum(axis=1)
         .mean()
@@ -231,41 +223,16 @@ def measure_unweighted_loss(
     return float(epoch_loss)
 
 
-class VimaPolicyWraper(torch.nn.Module):
-    def __init__(
-        self,
-        *,
-        single_process_policy: VIMAPolicy,
-        device: Device
-        ):
-        super().__init__()
-        self.policy = single_process_policy
-        self.device = device
-
-
-    def forward(
-            self, 
-            data: List[NormalizedTraj]
-        ) -> List[Tuple[PredDist, Action, ForwardMetaData]]:
-        batch_preds = forward(
-            data,
-            self.device,
-            self.policy
-        )
-        return batch_preds
-
-
-
 def batch_forward(
         policy: VimaPolicyWraper, 
         data: List[NormalizedTraj],
         criterion: Criterion,
     ) -> Tuple[BatchLoss, List[LogRecord]]:
-    batch_forward = policy(data)
+    batch_forward_result = policy(data)
     batch_losses = [
         measure_traj_individual_loss(
             pred_dist, target_action, forward_meta, criterion
-        ) for pred_dist, target_action, forward_meta in batch_forward
+        ) for pred_dist, target_action, forward_meta in batch_forward_result
     ]
     axis_weight = get_action_weigts(
         batch_losses,
@@ -284,7 +251,8 @@ def batch_forward(
             axis_weight,
             task_weight,
         ) * scaling_factor
-            for unweigted_sample_loss, (_, _, forward_meta) in zip(unweigted_sample_losses, batch_forward)
+            for unweigted_sample_loss, (_, _, forward_meta) 
+                in zip(unweigted_sample_losses, batch_forward_result)
     ]
     batch_loss_log = [
         { 
@@ -298,7 +266,8 @@ def batch_forward(
             "task": get_task_class(forward_meta['prompt']),
             "local_rank": 0 if DDP_PARAM is None else get_ddp_param()["local_rank"]
         }
-            for unweigted_sample_loss, (_, _, forward_meta) in zip(unweigted_sample_losses, batch_forward)
+            for unweigted_sample_loss, (_, _, forward_meta) 
+                in zip(unweigted_sample_losses, batch_forward_result)
     ]
     batch_loss = torch.sum(
         torch.stack(weighted_sample_losses)

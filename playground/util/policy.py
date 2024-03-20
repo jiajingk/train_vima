@@ -2,8 +2,45 @@ from typing import Tuple, Optional
 import os
 import torch
 from vima import VIMAPolicy
-from playground.typing import Device, PolicyCfg, TrainHistory
+from playground.util.train import forward
+from playground.typing import (
+    NormalizedTraj,
+    Device,
+    VIMAPolicy,
+    PredDist, 
+    Action, 
+    ForwardMetaData,
+    TrainHistory,
+    PolicyCfg
+)
+from vima.policy import VIMAPolicy
+from typing import Tuple, List, Optional
+import torch
+import os
 
+
+class VimaPolicyWraper(torch.nn.Module):
+    def __init__(
+        self,
+        *,
+        single_process_policy: VIMAPolicy,
+        device: Device
+        ):
+        super().__init__()
+        self.policy = single_process_policy
+        self.device = device
+
+
+    def forward(
+            self, 
+            data: List[NormalizedTraj]
+        ) -> List[Tuple[PredDist, Action, ForwardMetaData]]:
+        batch_preds = forward(
+            data,
+            self.device,
+            self.policy
+        )
+        return batch_preds
 
 def create_policy_from_ckpt(
         ckpt_path: str, 

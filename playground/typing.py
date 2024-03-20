@@ -525,6 +525,8 @@ class DDPParam(TypedDict):
     master_ip: str
     master_port: str
     local_rank: int
+    socket: str
+    backend: Literal['nccl', 'gloo']
 
 
 DatasetSource = Literal['s3://vima', 'local']
