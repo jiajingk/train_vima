@@ -1,11 +1,12 @@
 import torch
-from playground.typing import RunConfig, TaskName
-from playground.env import create_env, oracle_step
+import numpy as np
+from playground.typing import RunConfig, EnvConfig, TaskName
+from playground.env import create_env, oracle_step, MakeConfig
+from vima_bench import PARTITION_TO_SPECS
 from playground.util.policy import create_policy_from_ckpt
 from playground.api import step
 
-
-
+np.set_printoptions(2)
 
 @torch.no_grad()
 def main(model_path: str, task: TaskName):
@@ -15,15 +16,23 @@ def main(model_path: str, task: TaskName):
         ckpt=model_path,
         device="cuda"
     )
+    env_config = EnvConfig(
+        use_time_wrapper=True,
+        use_reset_wrapper=True,
+        make_config=MakeConfig(modalities=["segm", "rgb"],
+        task_kwargs=PARTITION_TO_SPECS["test"][run_config.partition][run_config.task],
+        seed=42,
+        render_prompt=False,
+        display_debug_window=False,
+        hide_arm_rgb=False)
+    )
     policy = create_policy_from_ckpt(
         run_config.ckpt, 
         run_config.device, 
         prefix=''
     )
     policy.eval()
-    env = create_env(run_config)
-    import numpy as np
-    np.set_printoptions(2)
+    env = create_env(run_config, env_config)
     oracle_agent = env.task.oracle(env)
     for i in range(100):
         env.seed(i)
@@ -53,7 +62,6 @@ def main(model_path: str, task: TaskName):
             obs, _, done, info = env.step(policy_action)
             print(i, info)
             if done:
-                
                 break
 
 
