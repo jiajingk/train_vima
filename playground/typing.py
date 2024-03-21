@@ -17,6 +17,7 @@ from vima_bench import VIMAEnvBase
 from vima_bench.tasks.components.encyclopedia import ProfilePedia
 from vima import VIMAPolicy
 from vima.nn.action_decoder.dists import MultiCategorical, Categorical
+from torch.utils.data.distributed import DistributedSampler
 import pandas as pd
 
 Device = Literal['cpu', 'cuda']
@@ -544,3 +545,7 @@ class TrainHistory(TypedDict):
     optimizer_state_dict: Dict
     last_epoch: int
     wandb_config: Dict
+
+
+class DistributedDataLoader(Protocol):
+    sampler: DistributedSampler

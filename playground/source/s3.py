@@ -12,7 +12,7 @@ from concurrent import futures
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlparse
 from torch.utils.data import DataLoader
-
+from torch.utils.data.distributed import DistributedSampler
 from typing import (
     Tuple,  
     Optional,
@@ -126,24 +126,24 @@ def get_train_valid_data_loader(
     train_dataset = RecordDataset(train_dataset_address)
     valid_dataset = RecordDataset(valid_dataset_address)
     if distributed:
-        train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
+        train_sampler = DistributedSampler(train_dataset)
         shuffle = False
     else:
         train_sampler = None
         shuffle = True
-    train_loader = torch.utils.data.DataLoader(
+    train_loader = DataLoader(
         train_dataset, 
         batch_size=local_batch_size, 
         sampler=train_sampler,
         shuffle=shuffle
     )
     if distributed:
-        valid_sampler = torch.utils.data.distributed.DistributedSampler(valid_dataset)
+        valid_sampler = DistributedSampler(valid_dataset)
         shuffle = False
     else:
         valid_sampler = None
         shuffle = True
-    valid_loader = torch.utils.data.DataLoader(
+    valid_loader = DataLoader(
         valid_dataset, 
         batch_size=local_batch_size, 
         sampler=valid_sampler,

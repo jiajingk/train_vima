@@ -21,3 +21,4 @@ tensorflow-cpu
 numpy==1.23.1
 python-dotenv
 boto3
+paramiko
