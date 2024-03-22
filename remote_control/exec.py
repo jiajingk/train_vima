@@ -19,7 +19,7 @@ class TmuxSession:
         else:
             command_text, blocking = command
         assert "'" not in command_text
-        if blocking:
+        if blocking is True:
             execute(self.config, f"tmux send-keys -t {self.session_name} '{command_text}; tmux wait-for -S done' C-m")
             execute(self.config, f"tmux wait-for done")
         else:
@@ -74,7 +74,7 @@ def remote_execute_under_py_venv(
         config, accept_duplicate, exit_on_finish) as tmux_session:
         with create_py_venv(tmux_session, venv_path) as venv:
             for command in commands:
-                print(f"executing: {command}")
+                print(f"pyenv executing: {command}")
                 venv.execute(command)
     
 

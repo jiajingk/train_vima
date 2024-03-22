@@ -460,13 +460,23 @@ def write_model_checkpoint(
 def main_ddp(model_repo_folder):
     today: str = datetime.today().strftime('%Y-%m-%d-%H-%M')
     run_id: str = f"{today}_{uuid.uuid4().hex[:8]}"
+    model_path, from_scratch= get_parent_model_path(model_repo_folder)
+    policy, cfg, train_history = get_policy_and_cfg(model_path, 'cuda', from_scratch=from_scratch)
+    freeze_t5_except_last_2_layer(policy)
+    policy = VimaPolicyWraper(single_process_policy=policy, device='cuda')
+    if get_train_param()["distributed"] is True:
+        init_process(
+            get_ddp_param()
+        )
+        policy = DDP(
+            policy,
+            find_unused_parameters=True,
+            static_graph=True,
+        )
     train_loader, valid_loader = get_dataloader(
         get_train_param(),
         get_dataset_param(),
     )
-    model_path, from_scratch= get_parent_model_path(model_repo_folder)
-    policy, cfg, train_history = get_policy_and_cfg(model_path, 'cuda', from_scratch=from_scratch)
-    freeze_t5_except_last_2_layer(policy)
     epochs = get_train_param()["total_epoch"]
     if from_scratch is True:
         inital_epoch = 0
@@ -479,16 +489,7 @@ def main_ddp(model_repo_folder):
         weight_decay=get_optimizer_param()["weight_decay"]
     )
     assert optimizer.__class__.__name__ == get_optimizer_param()["optimizer_name"]
-    policy = VimaPolicyWraper(single_process_policy=policy, device='cuda')
-    if get_train_param()["distributed"] is True:
-        init_process(
-            get_ddp_param()
-        )
-        policy = DDP(
-            policy,
-            find_unused_parameters=True,
-            static_graph=True,
-        )
+    
     for epoch in range(inital_epoch, epochs):
         _, train_logs = train_one_epoch(
             policy,
@@ -550,4 +551,10 @@ if __name__ == "__main__":
     parser.add_argument("--master_port", type=str, default='29500')
     DDP_PARAM = parser.parse_args()
     #assert get_ddp_param()["world_size"] * get_train_param()["local_batch_size"] == 128
+    wandb.init(
+        project='test',
+        config={},
+        group=f"ddp",
+        job_type='train'
+    )
     main_ddp(os.path.join('.', 'parent_model'))

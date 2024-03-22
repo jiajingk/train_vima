@@ -2,7 +2,7 @@ import os
 import json
 from dotenv import dotenv_values
 from remote_control.exec import direct_remote_execute, remote_execute_under_py_venv
-from remote_control.util import send_small_file_to_server
+from remote_control.util import send_small_file_to_server, execute
 from typing import List
 
 
@@ -54,16 +54,54 @@ def sync_small_files(
                 dst_folder
             )
 
+def launch(remote_ips: List[IPAddress]):
+    wandb_api_key = dotenv_values('.env').get("WANDB_API_KEY")
+    for i, remote_ip in enumerate(remote_ips):
+        print(f"in machine: {remote_ip}")
+        commands = [
+            "cd train_vima",
+            f"export WANDB_API_KEY={wandb_api_key}",
+            "wandb login",
+            (f"python train_ddp.py --local_rank {i} --world_size 2 --master_ip 172.31.4.240 --master_port 29500", False)
+        ]
+        remote_execute_under_py_venv(commands, {
+            "pem_file_path": dotenv_values('.env').get("AWS_PEM_PATH"),
+            "server_ip": remote_ip,
+            "username": "ubuntu"
+        }, 'venv')
 
-
-
-if __name__ == "__main__":
-    with open(dotenv_values('.env').get("AWS_IP_PATH")) as f:
-        ip_lists = json.load(f)
+def sync_with_git(remote_ips: List[IPAddress]):
+    commands = [
+        "cd ~",
+        "rm -rf train_vima"
+        "git clone https://github.com/jiajingk/train_vima.git",
+        "pip install wandb",
+        "cd train_vima"
+        "wget https://huggingface.co/VIMA/VIMA/resolve/main/2M.ckpt",
+    ]
+    for remote_ip in remote_ips:
+        remote_execute_under_py_venv(commands, {
+            "pem_file_path": dotenv_values('.env').get("AWS_PEM_PATH"),
+            "server_ip": remote_ip,
+            "username": "ubuntu"
+        }, 'venv', accept_duplicate=False, exit_on_finish=True)
     files = [
-        "train_local.py",
+        "train_ddp.py",
+        ".env",
     ]
     sync_small_files(
-        ip_lists, files, "train_vima"
+        remote_ips, files, "train_vima"
     )
+
+def kill_all_tmux(remote_ips: List[IPAddress]):
+    tmux_session = "command_execution" 
+    for remote_ip in remote_ips:
+        execute({
+            "pem_file_path": dotenv_values('.env').get("AWS_PEM_PATH"),
+            "server_ip": remote_ip,
+            "username": "ubuntu"
+        }, f"tmux kill-session -t {tmux_session}")
+
+if __name__ == "__main__":
+    ...
     
