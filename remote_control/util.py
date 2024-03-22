@@ -3,8 +3,8 @@ import os
 from tqdm import tqdm
 from contextlib import contextmanager
 from paramiko import SSHClient, SFTPClient
-from typing import Iterator, TypedDict, List
-
+from typing import Iterator, TypedDict, List, Tuple, Optional
+import posixpath
 
 class SSHConfig(TypedDict):
     server_ip: str
@@ -34,14 +34,14 @@ def get_sftp_client(ssh_client: SSHClient) -> Iterator[SFTPClient]:
         sftp.close()
 
 
-def execute(config: SSHConfig, command: str) -> str:
+def execute(config: SSHConfig, command: str) -> Tuple[str, str]:
     with get_ssh_client(config) as client:
         _, stdout, stderr = client.exec_command(command)
         result = stdout.read().decode()
         err = stderr.read().decode()
         if err:
             print(f"Error: {err}")
-        return result
+        return result, err
 
 
 def execute_multi_line(config: SSHConfig, commands: List[str]):
@@ -82,19 +82,29 @@ def pull_latest_weight(
 def send_small_file_to_server(
         ssh_config: SSHConfig, 
         local_file_path: str, 
-        remote_file_path: str
+        remote_directory: str,
+        remane: Optional[str] = None
     ):
+    if remane is None:
+        remote_file_name = os.path.basename(local_file_path)
+    else:
+        remote_file_name = remane
     with get_ssh_client(ssh_config) as ssh_client:
         with get_sftp_client(ssh_client) as sftp_client:
-            sftp_client.put(local_file_path, remote_file_path)
+            sftp_client.put(local_file_path, posixpath.join(remote_directory, remote_file_name))
 
 
 def send_large_file_to_server(
         ssh_config: SSHConfig,  
         local_file_path: str, 
-        remote_directory: str
+        remote_directory: str,
+        remane: Optional[str] = None
     ):
-    remote_file_path = f"{remote_directory}/{local_file_path.split('/')[-1]}"
+    if remane is None:
+        remote_file_name = os.path.basename(local_file_path)
+    else:
+        remote_file_name = remane
+    
     with get_ssh_client(ssh_config) as ssh_client:
         with get_sftp_client(ssh_client) as sftp_client:
             file_size = os.path.getsize(local_file_path)
@@ -102,5 +112,5 @@ def send_large_file_to_server(
                 def print_progress(transferred, to_be_transferred):
                     del to_be_transferred
                     pbar.update(transferred - pbar.n)
-                sftp_client.put(local_file_path, remote_file_path, callback=print_progress)
+                sftp_client.put(local_file_path, posixpath.join(remote_directory, remote_file_name), callback=print_progress)
 

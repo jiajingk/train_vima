@@ -451,7 +451,8 @@ ActionWeightMethod = Literal[
 
 TaskWeightMethod = Literal[
     'scale_with_respect_to_the_max_batch_avg_loss',
-    'scale_with_respect_to_the_min_batch_avg_loss'
+    'scale_with_respect_to_the_min_batch_avg_loss',
+    'default'
 ]
 
 
@@ -549,3 +550,29 @@ class TrainHistory(TypedDict):
 
 class DistributedDataLoader(Protocol):
     sampler: DistributedSampler
+
+
+LogTsUnit = str
+LogTsValue = int
+class TimedLog(TypedDict):
+    measure: Dict[str, Union[int, float]]
+    timestamp: Tuple[LogTsUnit, LogTsValue]
+
+class SampleRecord(TypedDict):
+    unweigted_sample_loss__pose0_position_0: float
+    unweigted_sample_loss__pose0_position_1: float
+    unweigted_sample_loss__pose1_position_0: float
+    unweigted_sample_loss__pose1_position_1: float
+    unweigted_sample_loss__pose0_rotation_0: float
+    unweigted_sample_loss__pose0_rotation_1: float
+    unweigted_sample_loss__pose0_rotation_2: float
+    unweigted_sample_loss__pose0_rotation_3: float
+    unweigted_sample_loss__pose1_rotation_0: float
+    unweigted_sample_loss__pose1_rotation_1: float
+    unweigted_sample_loss__pose1_rotation_2: float
+    unweigted_sample_loss__pose1_rotation_3: float
+    task: TaskName
+    local_rank: int
+    lr: float
+    batch_id: int
+    epoch_id: int

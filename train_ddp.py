@@ -10,7 +10,7 @@ from playground.util.train import (
 )
 from playground.util.loss_scaling import (
     get_action_weigts,
-    get_default_task_weight,
+    get_task_weights,
     calculate_action_weight_factor,
 )
 from playground.util.reduce import (
@@ -25,25 +25,34 @@ from playground.source.s3 import (
 from playground.source.tf_record import (
     deseralize,
 )
+from playground.util.log import (
+    measure_unweighted_loss_per_task_per_attribute,
+    measure_unweighted_loss_per_attribute,
+    measure_unweighted_loss_per_task,
+    measure_avg_unweighted_loss,
+    measure_avg_lr,
+    flatten_dict
+)
 from playground.ddp import init_process
 from playground.typing import (
     NormalizedTraj,
     Tensor,
     Criterion,
-    DataFrameTrainLogSchema,
     TrainParam,
     DDPParam,
     OptimizerParam,
     DatasetParam,
     CosAnnealingParam,
     TrainHistory,
-    DistributedDataLoader
+    DistributedDataLoader,
+    TimedLog,
+    SampleRecord,
 )
 from playground.util.prompt import get_task_class
 from torch.utils.data import DataLoader
 from torch.nn.parallel import DistributedDataParallel as DDP
 from tqdm import tqdm
-from typing import Tuple, List, Dict, Optional, Union
+from typing import Tuple, List, Dict, Optional, Union, Callable
 from datetime import datetime
 from glob import glob
 import torch
@@ -52,17 +61,19 @@ import pandas as pd
 import math
 import uuid
 import argparse
+import wandb
 
 BatchLoss = Tensor
 LogRecord = Dict[str, float]
 
 DDP_PARAM: Optional[DDPParam] = None
+import math 
 
 def get_lr_param() -> CosAnnealingParam:
     return {
         "warmup_end_at_iters": 7000,
-        "flatten_end_at_iters": 24000,
-        "lr_decay_end_at_iters": 48000,
+        "flatten_end_at_iters": 7000,
+        "lr_decay_end_at_iters": 24000,
         "learning_rate": 1e-4,
         "min_lr": 1e-7, 
     }
@@ -78,34 +89,36 @@ def get_optimizer_param() -> OptimizerParam:
 
 def get_dataset_param() -> DatasetParam:
     return  {
-        "data_pct_usage": 1.0,
-        "total_data_size_per_task": 4,
-        "validation_pct": 0.25,
-        "source": "local",
+        "data_pct_usage": 0.5,
+        "total_data_size_per_task": 40000,
+        "validation_pct": 0.1,
+        "source": "s3://vima",
         "tasks": [
-            'follow_order',
+            'visual_manipulation',
             'manipulate_old_neighbor',
             'novel_adj',
             'novel_noun',
             'pick_in_order_then_restore',
             'rearrange',
             'rearrange_then_restore',
+            'same_profile',
             'rotate',
-            'same_shape',
+            'scene_understanding',
+            'simple_manipulation',
             'sweep_without_exceeding',
-            'twist',
-            'visual_manipulation'
+            'follow_order',
+            'twist'
         ]
     }
 
-
 def get_train_param() -> TrainParam:
     return {
-        "total_epoch": 10,
-        "local_batch_size": 8,
+        "model_size": "2M",
+        "total_epoch": 11,
+        "local_batch_size": 16,
         "distributed": True,
-        "model_size": '2M'
     }
+
 
 def get_ddp_param() -> DDPParam:
     if DDP_PARAM is None:
@@ -118,17 +131,6 @@ def get_ddp_param() -> DDPParam:
         "backend": "nccl",
         "socket": "ens5"
     }
-
-
-def flatten_dict(d: Dict[str, Union[str, int, float]], parent_key='', sep='__'):
-    items = []
-    for k, v in d.items():
-        new_key = f"{parent_key}{sep}{k}" if parent_key else k
-        if isinstance(v, dict):
-            items.extend(flatten_dict(v, new_key, sep).items())
-        else:
-            items.append((new_key, v))
-    return dict(items)
 
 
 def get_clip_grad_norm() -> float:
@@ -164,25 +166,58 @@ def get_lr(it: int) -> float:
     return min_lr + coeff * (learning_rate - min_lr)
 
 
-def measure_lr(
+def get_batch_per_epoch(
         dataset_param: DatasetParam,
-        train_param: DatasetParam,
-        batch_id: int, 
-        epoch_id: int
+        train_param: TrainParam,
+        is_train: bool = True
     ):
-    epoch_size = (
-        int(dataset_param["total_data_size_per_task"] * len(dataset_param["tasks"]) 
-            * dataset_param["data_pct_usage"])
+    if is_train:
+        scaling = 1.0
+    else:
+        scaling = dataset_param["validation_pct"]
+    epoch_size = ( 
+        int(
+            dataset_param["total_data_size_per_task"] 
+            * scaling 
+            * len(dataset_param["tasks"]
+        ) 
+        * dataset_param["data_pct_usage"]) 
     )
     batch_size = (
         train_param["local_batch_size"] 
             if train_param["distributed"] is False 
-            else train_param["local_batch_size"] * get_ddp_param()["world_size"]
+            else train_param["local_batch_size"] * 1
     )
-    batch_count_per_epoch = epoch_size // batch_size
     if epoch_size % batch_size != 0:
-        batch_count_per_epoch += 1
+        return epoch_size // batch_size + 1
+    return epoch_size // batch_size
+
+
+def get_total_batch_count(
+        dataset_param: DatasetParam,
+        train_param: TrainParam,
+        batch_id: int, 
+        epoch_id: int,
+        is_train: bool = True
+    ) -> int:
+    batch_count_per_epoch = get_batch_per_epoch(dataset_param, train_param, is_train)
     current_total_batch_count = batch_id + epoch_id * batch_count_per_epoch
+    return current_total_batch_count
+
+
+def measure_lr(
+        dataset_param: DatasetParam,
+        train_param: TrainParam,
+        batch_id: int, 
+        epoch_id: int
+    ):
+    current_total_batch_count = get_total_batch_count(
+        dataset_param, 
+        train_param, 
+        batch_id, 
+        epoch_id, 
+        is_train=True
+    )
     return get_lr(current_total_batch_count)
 
 
@@ -201,30 +236,19 @@ def update_and_get_lr(
         param_group['lr'] = lr
     return lr
 
-
-def measure_unweighted_loss(
-        logs: DataFrameTrainLogSchema, 
-        epoch_id: int,
-    ) -> float:
-    log_df = pd.DataFrame(data=logs)
-    new_columns = {
-        col: col.replace('validation__', '') 
-            for col in log_df.columns if col.startswith('validation__')
-    }
-    log_df = log_df.rename(columns=new_columns)
-    unweighted_sample_cols = [
-        col for col in log_df.columns 
-            if 'unweigted_sample_loss' in col
+MeasureMethod = Callable[[List[LogRecord], Tuple[str, int], str], TimedLog]
+def log_to_wandb(
+        measure_methods: List[MeasureMethod],
+        logs: List[LogRecord], 
+        timestamp: Tuple[str, int],
+        prefix: str = ''):
+    wandb_logs: List[TimedLog] = [
+        measure_method(
+            logs, timestamp, prefix
+        ) for measure_method in measure_methods
     ]
-    desired_cols = log_df.columns.isin(unweighted_sample_cols)
-    epoch_loss = ( 
-        log_df
-        .loc[log_df['epoch_id'] == epoch_id]
-        .iloc[:, desired_cols]
-        .sum(axis=1)
-        .mean()
-    )
-    return float(epoch_loss)
+    for wandb_log in wandb_logs:
+        wandb.log(flatten_dict(wandb_log))
 
 
 def batch_forward(
@@ -243,7 +267,11 @@ def batch_forward(
         "default"
     )
     scaling_factor = calculate_action_weight_factor(axis_weight)
-    task_weight = get_default_task_weight(1.0)
+    task_weight = get_task_weights(
+        None,
+        None,
+        "default"
+    )
     unweigted_sample_losses = [
         reduce_traj_loss_in_time_axis(traj_loss, lambda _: 1.0)
             for traj_loss in batch_losses
@@ -304,14 +332,20 @@ def validate(
                 "lr": curr_lr
             } for log_record in batch_logs
         ]
+        log_to_wandb(
+            [
+                measure_unweighted_loss_per_task,
+                measure_unweighted_loss_per_attribute,
+                measure_unweighted_loss_per_task_per_attribute,
+                measure_avg_lr,
+                measure_avg_unweighted_loss,
+            ],
+            batch_logs, ("valid_batch", batch_id), 'valid__'
+        )
         epoch_logs += batch_logs
         epoch_loss += batch_loss.item()
         pbar.set_description(f"valid {epoch_id}: weighted loss {batch_loss.item()}")
-    return epoch_loss / (batch_id + 1), [
-        flatten_dict(
-            {"validation": log} 
-        ) for log in epoch_logs
-    ]
+    return epoch_loss / (batch_id + 1), epoch_logs
 
 
 def records_to_trajs(
@@ -358,6 +392,16 @@ def train_one_epoch(
                 "lr": curr_lr
             } for log_record in batch_logs
         ]
+        log_to_wandb(
+            [
+                measure_unweighted_loss_per_task,
+                measure_unweighted_loss_per_attribute,
+                measure_unweighted_loss_per_task_per_attribute,
+                measure_avg_lr,
+                measure_avg_unweighted_loss,
+            ],
+            batch_logs, ("train_batch", batch_id), 'train__'
+        )
         batch_loss.backward()
         torch.nn.utils.clip_grad_norm_(
             policy.parameters(),
@@ -400,7 +444,7 @@ def write_model_checkpoint(
         return
     today: str = datetime.today().strftime('%Y-%m-%d')
     save_file_name = f'{run_id}_{epoch}_{today}.ckpt'
-    path = os.path.join('saved_model', save_file_name)
+    path = os.path.join('~', 'saved_model', save_file_name)
     train_history: TrainHistory = {
         "last_epoch": epoch,
         "optimizer_state_dict": optimizer_state_dict
@@ -411,6 +455,7 @@ def write_model_checkpoint(
         'history': train_history
     }
     torch.save(ckpt, path)
+
 
 def main_ddp(model_repo_folder):
     today: str = datetime.today().strftime('%Y-%m-%d-%H-%M')
@@ -445,14 +490,24 @@ def main_ddp(model_repo_folder):
             static_graph=True,
         )
     for epoch in range(inital_epoch, epochs):
-        weighted_train_loss, train_logs = train_one_epoch(
+        _, train_logs = train_one_epoch(
             policy,
             train_loader,
             criterion,
             optimizer,
             epoch,
         )
-        if epoch % 5 == 0 and epoch > 0:
+        log_to_wandb(
+            [
+                measure_unweighted_loss_per_task,
+                measure_unweighted_loss_per_attribute,
+                measure_unweighted_loss_per_task_per_attribute,
+                measure_avg_lr,
+                measure_avg_unweighted_loss,
+            ],
+            train_logs, ("train_epoch", epoch), 'train__'
+        )
+        if epoch > 0:
             write_model_checkpoint(
                 run_id, 
                 epoch, 
@@ -460,26 +515,24 @@ def main_ddp(model_repo_folder):
                 policy.state_dict(),
                 cfg
             )
-        write_log_to_csv(train_logs, run_id, 'train')
-        print(
-            "train", 
-            f"unweighted_loss: {measure_unweighted_loss(train_logs, epoch)}", 
-            f"weighted_loss: {weighted_train_loss}"
-        )
         if valid_loader is not None:
-            weighted_valid_loss, valid_logs = validate(
+            _, valid_logs = validate(
                 policy,
                 valid_loader, 
                 criterion,
                 epoch,
                 get_current_lr(optimizer)
             )
-            write_log_to_csv(valid_logs, run_id, 'valid')
-            print(
-            "valid", 
-            f"unweighted_loss: {measure_unweighted_loss(valid_logs, epoch)}", 
-            f"weighted_loss: {weighted_valid_loss}"
-        )
+            log_to_wandb(
+                [
+                    measure_unweighted_loss_per_task,
+                    measure_unweighted_loss_per_attribute,
+                    measure_unweighted_loss_per_task_per_attribute,
+                    measure_avg_lr,
+                    measure_avg_unweighted_loss,
+                ],
+                valid_logs, ("valid_epoch", epoch), 'valid__'
+            )
     write_model_checkpoint(
         run_id, 
         epoch, 
@@ -496,4 +549,5 @@ if __name__ == "__main__":
     parser.add_argument("--master_ip", type=str,  default='localhost')
     parser.add_argument("--master_port", type=str, default='29500')
     DDP_PARAM = parser.parse_args()
+    #assert get_ddp_param()["world_size"] * get_train_param()["local_batch_size"] == 128
     main_ddp(os.path.join('.', 'parent_model'))

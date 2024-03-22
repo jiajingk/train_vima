@@ -128,6 +128,8 @@ def get_task_weights(
             selector,
             condition  
         )
+    elif method == "default":
+        return get_default_task_weight(1.0)
     raise AssertionError(f"{method} not implemented")
 
 def calculate_action_weight_factor(

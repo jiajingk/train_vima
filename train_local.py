@@ -10,7 +10,7 @@ from playground.util.train import (
 )
 from playground.util.loss_scaling import (
     get_action_weigts,
-    get_default_task_weight,
+    get_task_weights,
     calculate_action_weight_factor,
 )
 from playground.util.reduce import (
@@ -29,13 +29,20 @@ from playground.typing import (
     NormalizedTraj,
     Tensor,
     Criterion,
-    DataFrameTrainLogSchema,
     TrainParam,
     DDPParam,
     OptimizerParam,
     DatasetParam,
     CosAnnealingParam,
     TrainHistory
+)
+from playground.util.log import (
+    measure_unweighted_loss_per_task_per_attribute,
+    measure_unweighted_loss_per_attribute,
+    measure_unweighted_loss_per_task,
+    measure_unweighted_loss_per_batch,
+    measure_unweighted_loss,
+    flatten_dict
 )
 from playground.util.prompt import get_task_class
 from torch.utils.data import DataLoader
@@ -48,6 +55,7 @@ import os
 import pandas as pd
 import math
 import uuid
+
 
 BatchLoss = Tensor
 LogRecord = Dict[str, float]
@@ -75,10 +83,10 @@ def get_optimizer_param() -> OptimizerParam:
 
 def get_dataset_param() -> DatasetParam:
     return  {
-        "data_pct_usage": 1.0,
-        "total_data_size_per_task": 4,
-        "validation_pct": 0.25,
-        "source": "local",
+        "data_pct_usage": 0.10,
+        "total_data_size_per_task": 200,
+        "validation_pct": 0.10,
+        "source": "s3://vima",
         "tasks": [
             'follow_order',
             'manipulate_old_neighbor',
@@ -99,7 +107,7 @@ def get_dataset_param() -> DatasetParam:
 def get_train_param() -> TrainParam:
     return {
         "total_epoch": 10,
-        "local_batch_size": 8,
+        "local_batch_size": 32,
         "distributed": False,
         "model_size": '2M'
     }
@@ -116,15 +124,7 @@ def get_ddp_param() -> DDPParam:
     }
 
 
-def flatten_dict(d: Dict[str, Union[str, int, float]], parent_key='', sep='__'):
-    items = []
-    for k, v in d.items():
-        new_key = f"{parent_key}{sep}{k}" if parent_key else k
-        if isinstance(v, dict):
-            items.extend(flatten_dict(v, new_key, sep).items())
-        else:
-            items.append((new_key, v))
-    return dict(items)
+
 
 
 def get_clip_grad_norm() -> float:
@@ -160,25 +160,56 @@ def get_lr(it: int) -> float:
     return min_lr + coeff * (learning_rate - min_lr)
 
 
-def measure_lr(
+def get_batch_per_epoch(
         dataset_param: DatasetParam,
-        train_param: DatasetParam,
-        batch_id: int, 
-        epoch_id: int
+        train_param: TrainParam,
+        is_train: bool = True
     ):
-    epoch_size = (
-        int(dataset_param["total_data_size_per_task"] * len(dataset_param["tasks"]) 
-            * dataset_param["data_pct_usage"])
+    if is_train:
+        scaling = 1.0
+    else:
+        scaling = dataset_param["validation_pct"]
+    epoch_size = ( 
+        int(
+            dataset_param["total_data_size_per_task"] 
+            * scaling 
+            * len(dataset_param["tasks"]
+        ) 
+        * dataset_param["data_pct_usage"]) 
     )
     batch_size = (
         train_param["local_batch_size"] 
             if train_param["distributed"] is False 
-            else train_param["local_batch_size"] * get_ddp_param()["world_size"]
+            else train_param["local_batch_size"] * 1
     )
-    batch_count_per_epoch = epoch_size // batch_size
     if epoch_size % batch_size != 0:
-        batch_count_per_epoch += 1
+        return epoch_size // batch_size + 1
+    return epoch_size // batch_size
+
+def get_total_batch_count(
+        dataset_param: DatasetParam,
+        train_param: TrainParam,
+        batch_id: int, 
+        epoch_id: int,
+        is_train: bool = True
+    ) -> int:
+    batch_count_per_epoch = get_batch_per_epoch(dataset_param, train_param, is_train)
     current_total_batch_count = batch_id + epoch_id * batch_count_per_epoch
+    return current_total_batch_count
+
+def measure_lr(
+        dataset_param: DatasetParam,
+        train_param: TrainParam,
+        batch_id: int, 
+        epoch_id: int
+    ):
+    current_total_batch_count = get_total_batch_count(
+        dataset_param, 
+        train_param, 
+        batch_id, 
+        epoch_id, 
+        is_train=True
+    )
     return get_lr(current_total_batch_count)
 
 
@@ -198,30 +229,6 @@ def update_and_get_lr(
     return lr
 
 
-def measure_unweighted_loss(
-        logs: DataFrameTrainLogSchema, 
-        epoch_id: int,
-    ) -> float:
-    log_df = pd.DataFrame(data=logs)
-    new_columns = {
-        col: col.replace('validation__', '') 
-            for col in log_df.columns if col.startswith('validation__')
-    }
-    log_df = log_df.rename(columns=new_columns)
-    unweighted_sample_cols = [
-        col for col in log_df.columns 
-            if 'unweigted_sample_loss' in col
-    ]
-    desired_cols = log_df.columns.isin(unweighted_sample_cols)
-    epoch_loss = ( 
-        log_df
-        .loc[log_df['epoch_id'] == epoch_id]
-        .iloc[:, desired_cols]
-        .sum(axis=1)
-        .mean()
-    )
-    return float(epoch_loss)
-
 
 def batch_forward(
         policy: VimaPolicyWraper, 
@@ -239,7 +246,11 @@ def batch_forward(
         "default"
     )
     scaling_factor = calculate_action_weight_factor(axis_weight)
-    task_weight = get_default_task_weight(1.0)
+    task_weight = get_task_weights(
+        None,
+        None,
+        "default"
+    )
     unweigted_sample_losses = [
         reduce_traj_loss_in_time_axis(traj_loss, lambda _: 1.0)
             for traj_loss in batch_losses

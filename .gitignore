@@ -164,3 +164,5 @@ tasks
 *.csv
 
 remote_destination.json
+*.pem
+log.txt
