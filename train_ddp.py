@@ -26,7 +26,6 @@ from playground.source.tf_record import (
     deseralize,
 )
 from playground.util.log import (
-    measure_unweighted_loss_per_task_per_attribute,
     measure_unweighted_loss_per_attribute,
     measure_unweighted_loss_per_task,
     measure_avg_unweighted_loss,
@@ -45,8 +44,7 @@ from playground.typing import (
     CosAnnealingParam,
     TrainHistory,
     DistributedDataLoader,
-    TimedLog,
-    SampleRecord,
+    TimedLog
 )
 from playground.util.prompt import get_task_class
 from torch.utils.data import DataLoader
@@ -59,7 +57,6 @@ import torch
 import os
 import pandas as pd
 import math
-import uuid
 import argparse
 import wandb
 
@@ -68,6 +65,13 @@ LogRecord = Dict[str, float]
 
 DDP_PARAM: Optional[DDPParam] = None
 import math 
+
+def get_wandb_param():
+    return {
+        "project": "vima",
+        "group": "ddp",
+        "job_type": "train"
+    }
 
 def get_lr_param() -> CosAnnealingParam:
     return {
@@ -122,7 +126,14 @@ def get_train_param() -> TrainParam:
 
 def get_ddp_param() -> DDPParam:
     if DDP_PARAM is None:
-        raise ValueError("unable to retrieve ddp param")
+        return {
+            "local_rank": 0,
+            "master_ip": "",
+            "master_port": "",
+            "world_size": 1,
+            "backend": "",
+            "socket": ""
+        }
     return {
         "local_rank": int(DDP_PARAM.local_rank),
         "master_ip": str(DDP_PARAM.master_ip),
@@ -169,6 +180,7 @@ def get_lr(it: int) -> float:
 def get_batch_per_epoch(
         dataset_param: DatasetParam,
         train_param: TrainParam,
+        ddp_param: DDPParam,
         is_train: bool = True
     ):
     if is_train:
@@ -179,14 +191,14 @@ def get_batch_per_epoch(
         int(
             dataset_param["total_data_size_per_task"] 
             * scaling 
-            * len(dataset_param["tasks"]
+            * dataset_param["data_pct_usage"]
         ) 
-        * dataset_param["data_pct_usage"]) 
+        * len(dataset_param["tasks"]) 
     )
     batch_size = (
         train_param["local_batch_size"] 
             if train_param["distributed"] is False 
-            else train_param["local_batch_size"] * 1
+            else train_param["local_batch_size"] * ddp_param["world_size"]
     )
     if epoch_size % batch_size != 0:
         return epoch_size // batch_size + 1
@@ -196,24 +208,49 @@ def get_batch_per_epoch(
 def get_total_batch_count(
         dataset_param: DatasetParam,
         train_param: TrainParam,
+        ddp_param: DDPParam,
         batch_id: int, 
         epoch_id: int,
         is_train: bool = True
     ) -> int:
-    batch_count_per_epoch = get_batch_per_epoch(dataset_param, train_param, is_train)
+    batch_count_per_epoch = get_batch_per_epoch(dataset_param, train_param, ddp_param,is_train)
     current_total_batch_count = batch_id + epoch_id * batch_count_per_epoch
     return current_total_batch_count
+
+def get_train_batch_count(
+        train_batch_id: int, 
+        epoch_id: int,
+    ) -> int:
+    return get_total_batch_count(
+        get_dataset_param(),
+        get_train_param(),
+        get_ddp_param(),
+        train_batch_id, epoch_id, is_train=True
+    )
+
+def get_valid_batch_count(
+        valid_batch_id: int, 
+        epoch_id: int,
+    ) -> int:
+    return get_total_batch_count(
+        get_dataset_param(),
+        get_train_param(),
+        get_ddp_param(),
+        valid_batch_id, epoch_id, is_train=False
+    )
 
 
 def measure_lr(
         dataset_param: DatasetParam,
         train_param: TrainParam,
+        ddp_param: DDPParam,
         batch_id: int, 
         epoch_id: int
     ):
     current_total_batch_count = get_total_batch_count(
         dataset_param, 
         train_param, 
+        ddp_param,
         batch_id, 
         epoch_id, 
         is_train=True
@@ -229,6 +266,7 @@ def update_and_get_lr(
     lr = measure_lr(
         get_dataset_param(),
         get_train_param(),
+        get_ddp_param(),
         batch_id,
         epoch_id
     )
@@ -248,7 +286,10 @@ def log_to_wandb(
         ) for measure_method in measure_methods
     ]
     for wandb_log in wandb_logs:
-        wandb.log(flatten_dict(wandb_log))
+        wandb.log(flatten_dict({
+            "measure": wandb_log["measure"],
+            "timestamp": {wandb_log["timestamp"][0]: wandb_log["timestamp"][1]}
+        }))
 
 
 def batch_forward(
@@ -336,11 +377,9 @@ def validate(
             [
                 measure_unweighted_loss_per_task,
                 measure_unweighted_loss_per_attribute,
-                measure_unweighted_loss_per_task_per_attribute,
-                measure_avg_lr,
                 measure_avg_unweighted_loss,
             ],
-            batch_logs, ("valid_batch", batch_id), 'valid__'
+            batch_logs, ("valid_batch", get_valid_batch_count(batch_id, epoch_id)), 'valid__batch__'
         )
         epoch_logs += batch_logs
         epoch_loss += batch_loss.item()
@@ -396,11 +435,10 @@ def train_one_epoch(
             [
                 measure_unweighted_loss_per_task,
                 measure_unweighted_loss_per_attribute,
-                measure_unweighted_loss_per_task_per_attribute,
                 measure_avg_lr,
                 measure_avg_unweighted_loss,
             ],
-            batch_logs, ("train_batch", batch_id), 'train__'
+            batch_logs, ("train_batch", get_train_batch_count(batch_id, epoch_id)), 'train__batch__'
         )
         batch_loss.backward()
         torch.nn.utils.clip_grad_norm_(
@@ -442,9 +480,8 @@ def write_model_checkpoint(
     if (get_train_param()["distributed"] is True 
             and get_ddp_param()["local_rank"] != 0):
         return
-    today: str = datetime.today().strftime('%Y-%m-%d')
-    save_file_name = f'{run_id}_{epoch}_{today}.ckpt'
-    path = os.path.join('~', 'saved_model', save_file_name)
+    save_file_name = f'{run_id}_{epoch}.ckpt'
+    path = os.path.join('..', 'saved_model', save_file_name)
     train_history: TrainHistory = {
         "last_epoch": epoch,
         "optimizer_state_dict": optimizer_state_dict
@@ -458,8 +495,7 @@ def write_model_checkpoint(
 
 
 def main_ddp(model_repo_folder):
-    today: str = datetime.today().strftime('%Y-%m-%d-%H-%M')
-    run_id: str = f"{today}_{uuid.uuid4().hex[:8]}"
+    
     model_path, from_scratch= get_parent_model_path(model_repo_folder)
     policy, cfg, train_history = get_policy_and_cfg(model_path, 'cuda', from_scratch=from_scratch)
     freeze_t5_except_last_2_layer(policy)
@@ -489,7 +525,25 @@ def main_ddp(model_repo_folder):
         weight_decay=get_optimizer_param()["weight_decay"]
     )
     assert optimizer.__class__.__name__ == get_optimizer_param()["optimizer_name"]
-    
+    model_parent = (
+        f"{get_train_param()['model_size']} from scratch" 
+            if from_scratch is True else os.path.basename(model_path)
+    )
+    wandb_config = {
+        "ddp_param": get_ddp_param(),
+        "train_param": get_train_param(),
+        "dataset_param": get_dataset_param(),
+        "lr_param": get_lr_param(),
+        "parent_model": model_parent
+    }
+    wandb.init(
+        project=get_wandb_param()["project"],
+        config=wandb_config,
+        group=get_wandb_param()["group"],
+        job_type=get_wandb_param()["job_type"]
+    )
+    today: str = datetime.today().strftime('%Y-%m-%d')
+    run_id: str = f"{today}_{wandb.run.name}"
     for epoch in range(inital_epoch, epochs):
         _, train_logs = train_one_epoch(
             policy,
@@ -502,11 +556,10 @@ def main_ddp(model_repo_folder):
             [
                 measure_unweighted_loss_per_task,
                 measure_unweighted_loss_per_attribute,
-                measure_unweighted_loss_per_task_per_attribute,
                 measure_avg_lr,
                 measure_avg_unweighted_loss,
             ],
-            train_logs, ("train_epoch", epoch), 'train__'
+            train_logs, ("train_epoch", epoch), 'train__epoch__'
         )
         if epoch > 0:
             write_model_checkpoint(
@@ -528,11 +581,10 @@ def main_ddp(model_repo_folder):
                 [
                     measure_unweighted_loss_per_task,
                     measure_unweighted_loss_per_attribute,
-                    measure_unweighted_loss_per_task_per_attribute,
                     measure_avg_lr,
                     measure_avg_unweighted_loss,
                 ],
-                valid_logs, ("valid_epoch", epoch), 'valid__'
+                valid_logs, ("valid_epoch", epoch), 'valid__epoch__'
             )
     write_model_checkpoint(
         run_id, 
@@ -550,11 +602,5 @@ if __name__ == "__main__":
     parser.add_argument("--master_ip", type=str,  default='localhost')
     parser.add_argument("--master_port", type=str, default='29500')
     DDP_PARAM = parser.parse_args()
-    #assert get_ddp_param()["world_size"] * get_train_param()["local_batch_size"] == 128
-    wandb.init(
-        project='test',
-        config={},
-        group=f"ddp",
-        job_type='train'
-    )
-    main_ddp(os.path.join('.', 'parent_model'))
+    assert get_ddp_param()["world_size"] * get_train_param()["local_batch_size"] == 128
+    main_ddp(os.path.join('..', 'parent_model'))

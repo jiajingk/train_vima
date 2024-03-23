@@ -509,6 +509,7 @@ class CosAnnealingParam(TypedDict):
 
 
 class TrainParam(TypedDict):
+    model_size: str
     total_epoch: int
     local_batch_size: int
     distributed: bool
@@ -576,3 +577,9 @@ class SampleRecord(TypedDict):
     lr: float
     batch_id: int
     epoch_id: int
+
+
+class WandbParam(TypedDict):
+    project: str
+    group: str
+    job_type: str

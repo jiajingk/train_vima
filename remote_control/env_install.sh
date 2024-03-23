@@ -3,3 +3,5 @@ sudo apt install python3-pip -y
 sudo apt install python3.9-venv -y
 sudo apt install net-tools -y
 python3.9 -m venv venv
+mkdir saved_model
+mkdir parent_model

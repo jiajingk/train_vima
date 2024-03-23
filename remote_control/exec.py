@@ -12,8 +12,10 @@ class TmuxSession:
     def __init__(self, session_name: str, config: SSHConfig):
         self.session_name = session_name
         self.config = config
+        self.last_command_blocking = False
     
     def execute(self, command: Command):
+        print(command)
         if isinstance(command, str):
             command_text, blocking = command, True
         else:
@@ -24,6 +26,7 @@ class TmuxSession:
             execute(self.config, f"tmux wait-for done")
         else:
             execute(self.config, f"tmux send-keys -t {self.session_name} '{command_text}' C-m")
+        self.last_command_blocking = blocking
 
 
 class PyVenv:
@@ -60,7 +63,10 @@ def create_py_venv(
     session.execute(f'source bin/activate')
     session.execute(f'cd ~')
     yield PyVenv(session, venv_path)
-    session.execute(f'deactivate')
+    if session.last_command_blocking is True:
+        session.execute(f'deactivate')
+    else:
+        session.execute((f'deactivate', False))
 
 
 def remote_execute_under_py_venv(
