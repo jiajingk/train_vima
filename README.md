@@ -37,6 +37,20 @@ AWS_SECRET_ACCESS_KEY=""
 ABSOLUTE_PATH_OF_WORKING_DIR=""
 ```
 
+for ddp training with wandb logging tools, some extra fields are needed in `.env` file 
+
+```
+AWS_PEM_PATH=""
+AWS_IP_PATH=""
+WANDB_API_KEY=""
+DDP_MASTER_IP=""
+DDP_MASTER_PORT=""
+```
+
+and you need to create a json file that contains the list of ip address of the ddp cluster
+(for example `["123.123.123.123", "456.456.456.456"]`) and let `AWS_IP_PATH` point to this json file.
+Also, all those remote machines should be ssh-able using `pem` file pointed by `AWS_PEM_PATH`
+
 if you don't use AWS as remote source, you can leave the fields related to AWS blank
 
 

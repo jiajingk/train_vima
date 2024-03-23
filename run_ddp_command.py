@@ -55,13 +55,15 @@ def sync_small_files(
 
 def launch(remote_ips: List[IPAddress]):
     wandb_api_key = dotenv_values('.env').get("WANDB_API_KEY")
+    ddp_master_ip = dotenv_values('.env').get("DDP_MASTER_IP")
+    ddp_master_port = dotenv_values('.env').get("DDP_MASTER_PORT")
     for i, remote_ip in enumerate(remote_ips):
         print(f"in machine: {remote_ip}")
         commands = [
             "cd train_vima",
             f"export WANDB_API_KEY={wandb_api_key}",
             "wandb login",
-            (f"python train_ddp.py --local_rank {i} --world_size 8 --master_ip 172.31.4.240 --master_port 29500", False)
+            (f"python train_ddp.py --local_rank {i} --world_size 8 --master_ip {ddp_master_ip} --master_port {ddp_master_port}", False)
         ]
         remote_execute_under_py_venv(commands, {
             "pem_file_path": dotenv_values('.env').get("AWS_PEM_PATH"),
