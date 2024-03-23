@@ -107,10 +107,10 @@ visualization of losses can be found in `visualize.ipynb`
 
 ## DDP Training
 
-To deploy training uing DDP, one option is provision GPU machines on cloud, here we choose AWS, but
+To deploy training uing DDP, one option is by provisioning GPU machines on cloud, here we choose AWS, but
 any ubuntu based GPU machines that support CUDA should do the work. The Image we use is `Deep Learning Base OSS Nvidia Driver GPU AMI (Ubuntu 20.04) 20240318`. 
 
-With the machines ready, we will use `run_ddp_command.py` and `train_ddp.py` to perform DDP training.
+With the machines ready, we can then use `run_ddp_command.py` and `train_ddp.py` to perform DDP training.
 First, in `train_ddp.py`, based on the number of machine provisioned (`world_size`), changing the `local_batch_size` in `get_train_param` function to make sure `world_size * local_batch_size` is 128.
 
 Then pick the function in `run_ddp_command` to do the work. The order is 
