@@ -98,7 +98,7 @@ def get_dataset_param() -> DatasetParam:
         "validation_pct": 0.1,
         "source": "s3://vima",
         "tasks": [
-            'visual_manipulation',
+            'simple_manipulation',
             'manipulate_old_neighbor',
             'novel_adj',
             'novel_noun',
@@ -114,6 +114,7 @@ def get_dataset_param() -> DatasetParam:
             'twist'
         ]
     }
+
 
 def get_train_param() -> TrainParam:
     return {

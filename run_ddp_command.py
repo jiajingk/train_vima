@@ -110,10 +110,4 @@ def kill_all_tmux(remote_ips: List[IPAddress]):
 if __name__ == "__main__":
     with open(dotenv_values('.env').get("AWS_IP_PATH")) as f:
         ip_lists = json.load(f)
-    files = [
-        "train_ddp.py",
-       # ".env",
-    ]
-    sync_small_files(ip_lists, files, "train_vima")
-    launch(ip_lists)
-    #kill_all_tmux(ip_lists)
+    ...

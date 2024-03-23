@@ -100,8 +100,20 @@ mkdir parent_model
 copy your_model.ckpt parent_model # for windows
 python train_local.py
 ```
-The instructions for DDP training will be added soon
 
 ## Visualize logs
 
 visualization of losses can be found in `visualize.ipynb`
+
+## DDP Training
+
+To deploy training uing DDP, one option is provision GPU machines on cloud, here we choose AWS, but
+any ubuntu based GPU machines that support CUDA should do the work. The Image we use is `Deep Learning Base OSS Nvidia Driver GPU AMI (Ubuntu 20.04) 20240318`. 
+
+With the machines ready, we will use `run_ddp_command.py` and `train_ddp.py` to perform DDP training.
+First, in `train_ddp.py`, based on the number of machine provisioned (`world_size`), changing the `local_batch_size` in `get_train_param` function to make sure `world_size * local_batch_size` is 128.
+
+Then pick the function in `run_ddp_command` to do the work. The order is 
+`install_ubuntu_dependencies` -> `install_python_dependencies` -> `sync_small_files` (`.env` and `train_ddp.py`) -> `launch`
+
+A more user friendly setup will be added soon
