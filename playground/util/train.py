@@ -19,6 +19,8 @@ from playground.util.measure import (
     measure_traj_individual_loss, 
     to_flatten_step_measure
 )
+from datetime import datetime
+import uuid
 
 
 def freeze_t5_except_last_2_layer(policy: VIMAPolicy) -> VIMAPolicy:
@@ -60,6 +62,7 @@ def decode_observation_and_prompt(
             "target_actions": data_batch["target_actions"][t_step], 
             "token_lengths": data_batch["token_lengths"][t_step], 
             "prompt": data_batch["prompt"][t_step],
+            "task": data_batch["task"][t_step],
         } for t_step in range(traj_time_step_length) 
     ] 
     return tokens_out, decode_metas 
@@ -97,7 +100,8 @@ def forward(
                 {
                     "is_rotation": decode_meta["is_rotation"],
                     "action_length": target_action["pose0_position"].shape[0],
-                    "prompt": decode_meta["prompt"]
+                    "prompt": decode_meta["prompt"],
+                    "task": decode_meta["task"],
                 }
             )
         )
@@ -142,3 +146,8 @@ def measure_sample_loss(
     for step_loss in step_losses:
         sample_loss += step_loss
     return sample_loss / len(step_losses), sample_loss_log
+
+
+def generate_run_id() -> str:
+    today: str = datetime.today().strftime('%Y-%m-%d-%H-%M')
+    return f"{today}_{uuid.uuid4().hex[:8]}"

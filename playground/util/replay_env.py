@@ -204,15 +204,14 @@ def normalize_traj(traj: Traj) -> NormalizedTraj:
 def load_traj(task_id: int, task_name: TaskName = 'rotate') -> Traj:
     env = ReplayEnv(os.path.join('tasks', task_name))
     env.set_traj(task_id)
-    return deepcopy(env.current_task)
+    traj = deepcopy(env.current_task)
+    traj["task"] = task_name
+    return traj
 
 def load_trajs(amount: int = 128, task_name: TaskName = 'rotate') -> List[Traj]:
-    env = ReplayEnv(os.path.join('tasks', task_name))
-    trajs = []
-    for _ in range(amount):
-        env.reset()
-        trajs.append(deepcopy(env.current_task))
-    return trajs
+    return [
+        load_traj(i, task_name) for i in range(amount)
+    ]
 
 def load_normalized_trajs(amount: int = 128, task_name: str = 'rotate') -> List[NormalizedTraj]:
     return [

@@ -1,4 +1,5 @@
 import math
+import numpy as np
 from typing import List, Dict, Callable
 from playground.typing import (
     StepMeasure,
@@ -76,6 +77,11 @@ def get_action_weigts(
         return scale_to_same_order_of_magnitude(batch_traj_measure)
     elif method == "default":
         return get_default_axis_weight(1.0)
+    elif method == "constant_scaling":
+        weight = get_default_axis_weight(1.0)
+        weight["pose0_position_1"] = math.log(50) / math.log(100)
+        weight["pose1_position_1"] = math.log(50) / math.log(100)
+        return weight
     raise AssertionError(f"{method} not implemented")
 
 def scale_with_respect_to_the_batch_avg(

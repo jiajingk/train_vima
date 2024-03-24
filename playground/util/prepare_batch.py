@@ -32,6 +32,7 @@ def prepare_batch_obs_action_tokens(
         "token_lengths": [],
         "is_rotation": [],
         "prompt": [],
+        "task": [],
     }
     for traj in trajs:
         is_rotation = bool( 
@@ -66,6 +67,7 @@ def prepare_batch_obs_action_tokens(
         data_batch["token_lengths"].append(token_length)
         data_batch["is_rotation"].append(is_rotation)
         data_batch["prompt"].append( traj['meta']['prompt'].lower())
+        data_batch["task"].append( traj["task"] )
     data_to_pad = (
         "obs_action_tokens",
         "obs_action_masks",

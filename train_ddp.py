@@ -11,7 +11,6 @@ from playground.util.train import (
 from playground.util.loss_scaling import (
     get_action_weigts,
     get_task_weights,
-    calculate_action_weight_factor,
 )
 from playground.util.reduce import (
     reduce_traj_loss_in_time_axis
@@ -44,7 +43,10 @@ from playground.typing import (
     CosAnnealingParam,
     TrainHistory,
     DistributedDataLoader,
-    TimedLog
+    TimedLog,
+    PredDist, 
+    Action, 
+    ForwardMetaData
 )
 from playground.util.prompt import get_task_class
 from torch.utils.data import DataLoader
@@ -76,8 +78,8 @@ def get_wandb_param():
 def get_lr_param() -> CosAnnealingParam:
     return {
         "warmup_end_at_iters": 7000,
-        "flatten_end_at_iters": 7000,
-        "lr_decay_end_at_iters": 24000,
+        "flatten_end_at_iters": 24000,
+        "lr_decay_end_at_iters": 48000,
         "learning_rate": 1e-4,
         "min_lr": 1e-7, 
     }
@@ -93,25 +95,24 @@ def get_optimizer_param() -> OptimizerParam:
 
 def get_dataset_param() -> DatasetParam:
     return  {
-        "data_pct_usage": 0.5,
+        "data_pct_usage": 0.80,
         "total_data_size_per_task": 40000,
-        "validation_pct": 0.1,
+        "validation_pct": 0.01,
         "source": "s3://vima",
         "tasks": [
-            'simple_manipulation',
-            'manipulate_old_neighbor',
-            'novel_adj',
-            'novel_noun',
-            'pick_in_order_then_restore',
-            'rearrange',
-            'rearrange_then_restore',
-            'same_profile',
-            'rotate',
-            'scene_understanding',
-            'simple_manipulation',
-            'sweep_without_exceeding',
-            'follow_order',
-            'twist'
+            "follow_order",
+            "manipulate_old_neighbor",
+            "novel_adj",
+            "novel_noun",
+            "pick_in_order_then_restore",
+            "rearrange_then_restore",
+            "rearrange",
+            "rotate",
+            "same_profile",
+            "scene_understanding",
+            "simple_manipulation",
+            "sweep_without_exceeding",
+            "twist",
         ]
     }
 
@@ -214,7 +215,7 @@ def get_total_batch_count(
         epoch_id: int,
         is_train: bool = True
     ) -> int:
-    batch_count_per_epoch = get_batch_per_epoch(dataset_param, train_param, ddp_param,is_train)
+    batch_count_per_epoch = get_batch_per_epoch(dataset_param, train_param, ddp_param, is_train)
     current_total_batch_count = batch_id + epoch_id * batch_count_per_epoch
     return current_total_batch_count
 
@@ -298,7 +299,7 @@ def batch_forward(
         data: List[NormalizedTraj],
         criterion: Criterion,
     ) -> Tuple[BatchLoss, List[LogRecord]]:
-    batch_forward = policy(data)
+    batch_forward: List[Tuple[PredDist, Action, ForwardMetaData]] = policy(data)
     batch_losses = [
         measure_traj_individual_loss(
             pred_dist, target_action, forward_meta, criterion
@@ -306,9 +307,8 @@ def batch_forward(
     ]
     axis_weight = get_action_weigts(
         batch_losses,
-        "default"
+        "constant_scaling"
     )
-    scaling_factor = calculate_action_weight_factor(axis_weight)
     task_weight = get_task_weights(
         None,
         None,
@@ -324,7 +324,7 @@ def batch_forward(
             forward_meta,
             axis_weight,
             task_weight,
-        ) * scaling_factor
+        )
             for unweigted_sample_loss, (_, _, forward_meta) in zip(unweigted_sample_losses, batch_forward)
     ]
     batch_loss_log = [
@@ -336,14 +336,12 @@ def batch_forward(
                     "task_weight": task_weight
                 }
             ),
-            "task": get_task_class(forward_meta['prompt']),
+            "task": forward_meta["task"],
             "local_rank": 0 if DDP_PARAM is None else get_ddp_param()["local_rank"]
         }
             for unweigted_sample_loss, (_, _, forward_meta) in zip(unweigted_sample_losses, batch_forward)
     ]
-    batch_loss = torch.sum(
-        torch.stack(weighted_sample_losses)
-    ) / len(weighted_sample_losses)
+    batch_loss = torch.sum(torch.stack(weighted_sample_losses)) / len(weighted_sample_losses)
     return batch_loss, batch_loss_log
 
 
@@ -582,7 +580,6 @@ def main_ddp(model_repo_folder):
                 [
                     measure_unweighted_loss_per_task,
                     measure_unweighted_loss_per_attribute,
-                    measure_avg_lr,
                     measure_avg_unweighted_loss,
                 ],
                 valid_logs, ("valid_epoch", epoch), 'valid__epoch__'

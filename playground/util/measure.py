@@ -74,6 +74,14 @@ def measure_traj_metrics(
             pred_dist, target_action, criterion, pred_mapper, target_mapper, t_step
         ) for t_step in range(total_time_step)
     ]
+    if forward_meta["task"].lower() in ("twist", "rotate"):
+        return traj_metrics_measure
+    for step_measure in traj_metrics_measure:
+        for action_type in step_measure:
+            if 'rotation' in action_type:
+                for i in range(len(step_measure[action_type])):
+                    step_measure[action_type][i] *= 0.0
+                
     return traj_metrics_measure
 
 
@@ -150,9 +158,13 @@ def to_flatten_step_measure(step_measure: StepMeasure, as_float: bool = True) ->
     default_measure = get_default_flatten_step_measure(0.0)
     for dim_name, measure in step_measure.items():
         for i, step_measure in enumerate(measure):
-            step_measure: Tensor
             if as_float:
-                step_measure = float(step_measure.item())
+                if isinstance(step_measure, Tensor):
+                    step_measure = float(step_measure.item())
+                elif step_measure is None:
+                    step_measure = step_measure
+                else:
+                    step_measure = float(step_measure)
             default_measure[f'{dim_name}_{i}'] = step_measure
     return default_measure
 

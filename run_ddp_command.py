@@ -2,12 +2,20 @@ import os
 import json
 from dotenv import dotenv_values
 from remote_control.exec import direct_remote_execute, remote_execute_under_py_venv
-from remote_control.util import send_small_file_to_server, execute
+from remote_control.util import send_small_file_to_server, execute, pull_latest_weight
 from typing import List
 
 
 IPAddress = str
 
+def get_latest_weight(remote_ips: List[IPAddress]):
+    master_ip = remote_ips[0]
+    config = {
+        "pem_file_path": dotenv_values('.env').get("AWS_PEM_PATH"),
+        "server_ip": master_ip,
+        "username": "ubuntu"
+    }
+    pull_latest_weight(config, "saved_model", "saved_model")
 
 def install_ubuntu_dependencies(remote_ips: List[IPAddress]):
     with open(os.path.join('remote_control', 'env_install.sh'), 'r') as f:
@@ -110,4 +118,4 @@ def kill_all_tmux(remote_ips: List[IPAddress]):
 if __name__ == "__main__":
     with open(dotenv_values('.env').get("AWS_IP_PATH")) as f:
         ip_lists = json.load(f)
-    ...
+    get_latest_weight(ip_lists)

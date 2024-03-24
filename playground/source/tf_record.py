@@ -2,6 +2,7 @@ from tensorflow.train import Example
 import numpy as np
 from collections import namedtuple
 from typing import ( 
+    Tuple,
     Union,
     List,  
     Dict, 
@@ -119,8 +120,9 @@ def map_into_boundary(
     }
 
 
-def deseralize(raw_record: str) -> Traj:
-    example = Example.FromString(raw_record)
+def deseralize(raw_record: Tuple[str, str]) -> Traj:
+    data_str, data_addr = raw_record
+    example = Example.FromString(data_str)
     result = {}
     for key, feature in example.features.feature.items():
         kind = feature.WhichOneof('kind')
@@ -134,4 +136,5 @@ def deseralize(raw_record: str) -> Traj:
         "front": rearrange(reconstructed_result['rgb_front'], 't h w c -> t c h w'),
         "top": rearrange(reconstructed_result['rgb_top'], 't h w c -> t c h w'),
     }
+    reconstructed_result["task"] = data_addr
     return reconstructed_result

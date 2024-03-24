@@ -7,6 +7,7 @@ from playground.util.train import (
     measure_traj_individual_loss,
     reduce_weighted_step_total_loss,
     freeze_t5_except_last_2_layer,
+    generate_run_id,
 )
 from playground.util.loss_scaling import (
     get_action_weigts,
@@ -40,7 +41,6 @@ from playground.util.log import (
     measure_unweighted_loss_per_task_per_attribute,
     measure_unweighted_loss_per_attribute,
     measure_unweighted_loss_per_task,
-    measure_unweighted_loss_per_batch,
     measure_unweighted_loss,
     flatten_dict
 )
@@ -83,10 +83,10 @@ def get_optimizer_param() -> OptimizerParam:
 
 def get_dataset_param() -> DatasetParam:
     return  {
-        "data_pct_usage": 0.10,
-        "total_data_size_per_task": 200,
-        "validation_pct": 0.10,
-        "source": "s3://vima",
+        "data_pct_usage": 1.0,
+        "total_data_size_per_task": 4,
+        "validation_pct": 0.25,
+        "source": "local",
         "tasks": [
             'follow_order',
             'manipulate_old_neighbor',
@@ -415,8 +415,7 @@ def write_model_checkpoint(
     torch.save(ckpt, path)
 
 def main(model_repo_folder):
-    today: str = datetime.today().strftime('%Y-%m-%d-%H-%M')
-    run_id: str = f"{today}_{uuid.uuid4().hex[:8]}"
+    run_id = generate_run_id()
     train_loader, valid_loader = get_dataloader(
         get_train_param(),
         get_dataset_param(),

@@ -70,7 +70,8 @@ def pull_latest_weight(
         dst_folder: str
     ) -> str:
     command = f'find {src_folder} -name "*.ckpt" -ls -printf "%T@ %Tc %p\n" | sort -n'
-    output = execute(ssh_config, command)
+    output, err = execute(ssh_config, command)
+    assert len(err) == 0, err
     last_location = output.split(' ')[-1].strip()
     model_name = last_location.split('/')[-1].strip()
     print(model_name)

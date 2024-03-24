@@ -174,16 +174,16 @@ def extract_s3_info(s3_url: str) -> Tuple[str, str]:
     return bucket, path
 
 
-def read_object(s3_client: Any, s3_url: str) -> str:
+def read_object(s3_client: Any, s3_url: str) -> Tuple[str, str]:
     bucket_name, file_name = extract_s3_info(s3_url)
     tfrecord_bytes = io.BytesIO()
     s3_client.download_fileobj(bucket_name, file_name, tfrecord_bytes)
     tfrecord_bytes.seek(0)
     decoded_string = tfrecord_bytes.read()
-    return decoded_string
+    return (decoded_string, s3_url.split('/')[-1].split('-')[0])
 
 
-def read_parallel_multithreading(keys: List[str]) -> Iterator[Optional[str]]:
+def read_parallel_multithreading(keys: List[str]) -> Iterator[Optional[Tuple[str, str]]]:
     session = boto3.session.Session()
     s3_client = session.client("s3")
     with ThreadPoolExecutor(max_workers=8) as executor:

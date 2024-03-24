@@ -289,18 +289,21 @@ class Traj(TypedDict):
     obs: ObsData
     action: Action
     meta: EnvMetaInfo
+    task: str
 
 
 class CutTraj(TypedDict):
     obs: ObsData
     action: Optional[Action]
     meta: EnvMetaInfo
+    task: str
 
 
 class NormalizedTraj(TypedDict):
     obs: ObsData
     action: Action
     meta: EnvMetaInfo
+    task: str
 
 
 class Env(Protocol):
@@ -334,6 +337,7 @@ class DataBatch(TypedDict):
     token_lengths: List[int]
     is_rotation: List[bool]
     prompt: List[str]
+    task: List[str]
 
 class DecodeMeta(TypedDict):
     n_max_objs: int
@@ -341,6 +345,7 @@ class DecodeMeta(TypedDict):
     target_actions: Action
     is_rotation: bool
     prompt: str
+    task: str
 
 class PredDist(TypedDict):
     pose0_position: MultiCategorical
@@ -353,6 +358,7 @@ class ForwardMetaData(TypedDict):
     is_rotation: bool
     action_length: int
     prompt: str
+    task: str
 
 
 class StepMeasure(TypedDict):
@@ -445,6 +451,7 @@ class TaskWeight(TypedDict):
 
 ActionWeightMethod = Literal[
     'scale_to_same_order_of_magnitude',
+    'constant_scaling',
     'default'
 ]
 
@@ -583,3 +590,10 @@ class WandbParam(TypedDict):
     project: str
     group: str
     job_type: str
+
+TaskLevel = Literal[
+    "placement_generalization",
+    "combinatorial_generalization",
+    "novel_object_generalization",
+    "novel_task_generalization"
+]
