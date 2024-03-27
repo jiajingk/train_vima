@@ -421,7 +421,11 @@ def main(model_repo_folder):
         get_dataset_param(),
     )
     model_path, from_scratch= get_parent_model_path(model_repo_folder)
-    policy, cfg, train_history = get_policy_and_cfg(model_path, 'cuda', from_scratch=from_scratch)
+    if from_scratch:
+        load_mode = 'random_init'
+    else:
+        load_mode = 'continous_from_ckpt'
+    policy, cfg, train_history = get_policy_and_cfg(model_path, 'cuda', load_mode)
     freeze_t5_except_last_2_layer(policy)
     epochs = get_train_param()["total_epoch"]
     if from_scratch is True:

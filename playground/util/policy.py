@@ -1,4 +1,4 @@
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Literal
 import os
 import torch
 from vima import VIMAPolicy
@@ -11,7 +11,8 @@ from playground.typing import (
     Action, 
     ForwardMetaData,
     TrainHistory,
-    PolicyCfg
+    PolicyCfg,
+    InitalizeMode
 )
 from vima.policy import VIMAPolicy
 from typing import Tuple, List, Optional
@@ -62,13 +63,16 @@ def get_policy_and_cfg(
         ckpt_path: str, 
         device: Device, 
         prefix: str = '', 
-        from_scratch: bool =True
+        mode: InitalizeMode = 'random_init'
     ) -> Tuple[VIMAPolicy, PolicyCfg, Optional[TrainHistory]]:
     ckpt = torch.load(ckpt_path, map_location='cpu')
     ckpt.pop('state_dict')
-    if from_scratch:
+    if mode == 'random_init':
         policy = VIMAPolicy(**ckpt["cfg"])
         policy.eval()
         return policy.to(device), ckpt["cfg"], None
-    else:
+    elif mode == 'continous_from_ckpt':
         return create_policy_from_ckpt(ckpt_path, device, prefix), ckpt["cfg"], ckpt["history"]
+    elif mode == 'ckpt_init':
+        return create_policy_from_ckpt(ckpt_path, device, prefix), ckpt["cfg"], None
+    raise ValueError(f"mode: {mode} is not implemented")

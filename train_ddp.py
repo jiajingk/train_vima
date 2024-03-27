@@ -46,7 +46,8 @@ from playground.typing import (
     TimedLog,
     PredDist, 
     Action, 
-    ForwardMetaData
+    ForwardMetaData,
+    InitalizeMode
 )
 from playground.util.prompt import get_task_class
 from torch.utils.data import DataLoader
@@ -77,9 +78,9 @@ def get_wandb_param():
 
 def get_lr_param() -> CosAnnealingParam:
     return {
-        "warmup_end_at_iters": 7000,
-        "flatten_end_at_iters": 40000,
-        "lr_decay_end_at_iters": 65000,
+        "warmup_end_at_iters": 0,
+        "flatten_end_at_iters": 0,
+        "lr_decay_end_at_iters": 24000,
         "learning_rate": 1e-4,
         "min_lr": 1e-7, 
     }
@@ -120,7 +121,7 @@ def get_dataset_param() -> DatasetParam:
 def get_train_param() -> TrainParam:
     return {
         "model_size": "2M",
-        "total_epoch": 20,
+        "total_epoch": 10,
         "local_batch_size": 16,
         "distributed": True,
     }
@@ -493,15 +494,24 @@ def write_model_checkpoint(
     torch.save(ckpt, path)
 
 
-def main_ddp(model_repo_folder):
-    
-    model_path, from_scratch= get_parent_model_path(model_repo_folder)
+def main_ddp(
+        model_repo_folder: str,
+        initalize_mode: InitalizeMode
+    ):
+    model_path, from_scratch = get_parent_model_path(model_repo_folder)
     if from_scratch is False:
         prefix = 'module.'
+        mode = initalize_mode
     else:
         prefix = ''
+        mode: InitalizeMode = 'random_init'
     assert from_scratch is False
-    policy, cfg, train_history = get_policy_and_cfg(model_path, 'cuda', prefix=prefix, from_scratch=from_scratch)
+    policy, cfg, train_history = get_policy_and_cfg(
+        model_path, 
+        'cuda', 
+        prefix=prefix, 
+        mode=mode
+    )
     freeze_t5_except_last_2_layer(policy)
     policy = VimaPolicyWraper(single_process_policy=policy, device='cuda')
     if get_train_param()["distributed"] is True:
@@ -518,10 +528,7 @@ def main_ddp(model_repo_folder):
         get_dataset_param(),
     )
     epochs = get_train_param()["total_epoch"]
-    if from_scratch is True:
-        inital_epoch = 0
-    else:
-        inital_epoch = train_history["last_epoch"] + 1
+    
     criterion = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.AdamW(
         policy.parameters(), 
@@ -529,6 +536,11 @@ def main_ddp(model_repo_folder):
         weight_decay=get_optimizer_param()["weight_decay"]
     )
     assert optimizer.__class__.__name__ == get_optimizer_param()["optimizer_name"]
+    if train_history is None:
+        inital_epoch = 0
+    else:
+        inital_epoch = train_history["last_epoch"] + 1
+        optimizer.load_state_dict(train_history["optimizer_state_dict"])
     model_parent = (
         f"{get_train_param()['model_size']} from scratch" 
             if from_scratch is True else os.path.basename(model_path)
@@ -606,4 +618,4 @@ if __name__ == "__main__":
     parser.add_argument("--master_port", type=str, default='29500')
     DDP_PARAM = parser.parse_args()
     assert get_ddp_param()["world_size"] * get_train_param()["local_batch_size"] == 128
-    main_ddp(os.path.join('..', 'parent_model'))
+    main_ddp(os.path.join('..', 'parent_model'), 'ckpt_init')

@@ -597,3 +597,5 @@ TaskLevel = Literal[
     "novel_object_generalization",
     "novel_task_generalization"
 ]
+
+InitalizeMode = Literal['random_init', 'ckpt_init', 'continous_from_ckpt']

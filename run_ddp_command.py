@@ -15,6 +15,10 @@ def put_latest_weight(remote_ips: List[IPAddress], path):
             "server_ip": remote_ip,
             "username": "ubuntu"
         }
+        execute(
+            config,
+            'rm parent_model/*.ckpt'
+        )
         send_large_file_to_server(
             config,
             path,
@@ -131,13 +135,8 @@ def kill_all_tmux(remote_ips: List[IPAddress]):
 if __name__ == "__main__":
     with open(dotenv_values('.env').get("AWS_IP_PATH")) as f:
         ip_lists = json.load(f)
-    kill_all_tmux(ip_lists)
-    #put_latest_weight(ip_lists, 'saved_model\\2024-03-24_charmed-lion-367_15.ckpt')
-    files = [
-        "train_ddp.py",
-        ".env",
-    ]
-    sync_small_files(
-        ip_lists, files, "train_vima"
-    )
+    #kill_all_tmux(ip_lists)
+    #put_latest_weight(ip_lists, 'saved_model\\2024-03-27_colorful-hill-377_18.ckpt')
+    files = [ "train_ddp.py", ".env" ]; sync_small_files(ip_lists, files, "train_vima")
     launch(ip_lists)
+    #get_latest_weight(ip_lists)
