@@ -78,8 +78,8 @@ def get_wandb_param():
 def get_lr_param() -> CosAnnealingParam:
     return {
         "warmup_end_at_iters": 7000,
-        "flatten_end_at_iters": 24000,
-        "lr_decay_end_at_iters": 48000,
+        "flatten_end_at_iters": 40000,
+        "lr_decay_end_at_iters": 65000,
         "learning_rate": 1e-4,
         "min_lr": 1e-7, 
     }
@@ -120,7 +120,7 @@ def get_dataset_param() -> DatasetParam:
 def get_train_param() -> TrainParam:
     return {
         "model_size": "2M",
-        "total_epoch": 11,
+        "total_epoch": 20,
         "local_batch_size": 16,
         "distributed": True,
     }
@@ -496,7 +496,12 @@ def write_model_checkpoint(
 def main_ddp(model_repo_folder):
     
     model_path, from_scratch= get_parent_model_path(model_repo_folder)
-    policy, cfg, train_history = get_policy_and_cfg(model_path, 'cuda', from_scratch=from_scratch)
+    if from_scratch is False:
+        prefix = 'module.'
+    else:
+        prefix = ''
+    assert from_scratch is False
+    policy, cfg, train_history = get_policy_and_cfg(model_path, 'cuda', prefix=prefix, from_scratch=from_scratch)
     freeze_t5_except_last_2_layer(policy)
     policy = VimaPolicyWraper(single_process_policy=policy, device='cuda')
     if get_train_param()["distributed"] is True:

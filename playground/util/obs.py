@@ -1,7 +1,7 @@
 import numpy as np
 import cv2
 import torch
-from typing import Optional, Tuple, List
+from typing import Optional, Tuple, List, Dict
 from einops import rearrange
 from vima.utils import (
     add_batch_dim,
@@ -28,7 +28,7 @@ from playground.typing import (
     SegmData,
     ViewData,
 )
-
+from torch.distributions.categorical import Categorical
 
 def pad_to_square(cropped_img: np.ndarray) -> np.ndarray:
     diff = abs(cropped_img.shape[1] - cropped_img.shape[2])
@@ -59,6 +59,26 @@ def scale_to(cropped_img: np.ndarray, size: int) -> np.ndarray:
         "h w c -> c h w"
     )
     return cropped_img
+
+def prepare_view_random_noise(
+        rgb_this_view: np.ndarray,
+    ):
+    img_height = rgb_this_view.shape[1]
+    img_width = rgb_this_view.shape[2]
+    max_bbox_height = img_height // 2
+    max_bbox_width = img_width // 2
+    h = np.random.randint(1, max_bbox_height + 1)
+    w = np.random.randint(1, max_bbox_width + 1)
+    ymin = np.random.randint(0, img_height - h + 1)
+    xmin = np.random.randint(0, img_width - w + 1)
+    ymax = ymin + h
+    xmax = xmin + w
+    x_center, y_center = (xmin + xmax) / 2, (ymin + ymax) / 2
+    cropped_img = rgb_this_view[:, ymin : ymax + 1, xmin : xmax + 1]
+    if cropped_img.shape[1] != cropped_img.shape[2]:
+        cropped_img = pad_to_square(cropped_img)
+    cropped_img = scale_to(cropped_img, 32)
+    return (int(x_center), int(y_center), int(h), int(w)), cropped_img
 
 
 def prepare_view_obj(
@@ -98,21 +118,44 @@ def zero_pad_n_obj(datas: Tuple[np.ndarray], n_pad: int) -> Tuple[np.ndarray]:
         ) for data, padded_shape in zip(datas, padded_shapes)
     )
 
+def cat(k: int, p: Dict[int, float]) -> int:
+    assert set(p.keys()) == set(range(k)), "a valid distribution should acount all possible outcome"
+    probs = [p[i] for i in range(k)]
+    return (
+        Categorical(torch.tensor(probs))
+        .sample()
+        .item()
+    )
+
 
 def prepare_view_obj_list(
         rgb_this_view: np.ndarray,
         segm_this_view: np.ndarray,
         obj_ids: List[int],
+        apply_object_augmentation: bool = True
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     bboxes = []
     cropped_imgs = []
     n_pad = 0
+    noise_ids = set()
+    if (apply_object_augmentation and 
+        (n_arg_objs := cat(2, {0: 0.95, 1: 0.05})) > 0):
+        for i in range(n_arg_objs):
+            random_index = np.random.randint(0, len(obj_ids))
+            noise_id = max(obj_ids) + 1 + i
+            noise_ids.add(noise_id)
+            obj_ids.insert(random_index, noise_id)
     for obj_id in obj_ids:
-        view_obj = prepare_view_obj(
-            rgb_this_view,
-            segm_this_view,
-            obj_id
-        )
+        if obj_id in noise_ids:
+            view_obj = prepare_view_random_noise(
+                rgb_this_view
+            )
+        else:
+            view_obj = prepare_view_obj(
+                rgb_this_view,
+                segm_this_view,
+                obj_id
+            )
         if view_obj is None:
             n_pad += 1
             continue

@@ -72,7 +72,7 @@ def main(model_path: str, task: TaskName, count: int):
     policy = create_policy_from_ckpt(
         run_config.ckpt, 
         run_config.device, 
-        #prefix='module.'
+        prefix='module.'
     )
     policy.eval()
     env = create_env(run_config, env_config)
@@ -235,9 +235,9 @@ def eval_placement_generalization(model_path: str, task: TaskName, num_exp: int)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model_path", type=str, default="2M.ckpt")
-    parser.add_argument("--task", type=str, default="novel_adj")
+    parser.add_argument("--model_path", type=str, default="saved_model\\2024-03-24_charmed-lion-367_15.ckpt")
+    parser.add_argument("--task", type=str, default="")
     parser.add_argument("--num_exp", type=int, default=50)
     task_param = parser.parse_args()
     #eval_placement_generalization(task_param.model_path, task_param.task, task_param.num_exp)
-    main(task_param.model_path, task_param.task, task_param.num_exp)
+    main(task_param.model_path, "manipulate_old_neighbor", task_param.num_exp)
