@@ -78,9 +78,9 @@ def get_wandb_param():
 
 def get_lr_param() -> CosAnnealingParam:
     return {
-        "warmup_end_at_iters": 0,
-        "flatten_end_at_iters": 0,
-        "lr_decay_end_at_iters": 24000,
+        "warmup_end_at_iters": 7000,
+        "flatten_end_at_iters": 40000,
+        "lr_decay_end_at_iters": 65000,
         "learning_rate": 1e-4,
         "min_lr": 1e-7, 
     }
@@ -121,7 +121,7 @@ def get_dataset_param() -> DatasetParam:
 def get_train_param() -> TrainParam:
     return {
         "model_size": "2M",
-        "total_epoch": 10,
+        "total_epoch": 20,
         "local_batch_size": 16,
         "distributed": True,
     }
@@ -618,4 +618,4 @@ if __name__ == "__main__":
     parser.add_argument("--master_port", type=str, default='29500')
     DDP_PARAM = parser.parse_args()
     assert get_ddp_param()["world_size"] * get_train_param()["local_batch_size"] == 128
-    main_ddp(os.path.join('..', 'parent_model'), 'ckpt_init')
+    main_ddp(os.path.join('..', 'parent_model'), 'random_init')

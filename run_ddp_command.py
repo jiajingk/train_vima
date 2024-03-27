@@ -135,8 +135,9 @@ def kill_all_tmux(remote_ips: List[IPAddress]):
 if __name__ == "__main__":
     with open(dotenv_values('.env').get("AWS_IP_PATH")) as f:
         ip_lists = json.load(f)
-    #kill_all_tmux(ip_lists)
+    kill_all_tmux(ip_lists)
     #put_latest_weight(ip_lists, 'saved_model\\2024-03-27_colorful-hill-377_18.ckpt')
+    sync_with_git(ip_lists)
     files = [ "train_ddp.py", ".env" ]; sync_small_files(ip_lists, files, "train_vima")
     launch(ip_lists)
     #get_latest_weight(ip_lists)
