@@ -139,14 +139,14 @@ def prepare_view_obj_list(
     cropped_imgs = []
     n_pad = 0
     noise_ids = set()
-    if (apply_object_augmentation and 
-        (n_arg_objs := cat(2, {0: 0.95, 1: 0.05})) > 0):
+    if apply_object_augmentation:
+        n_arg_objs = cat(2, {0: 0.95, 1: 0.05})
         for i in range(n_arg_objs):
             random_index = np.random.randint(0, len(obj_ids))
             noise_id = max(obj_ids) + 1 + i
             noise_ids.add(noise_id)
             obj_ids.insert(random_index, noise_id)
-    random.shuffle(obj_ids)
+        random.shuffle(obj_ids)
     for obj_id in obj_ids:
         if obj_id in noise_ids:
             view_obj = prepare_view_random_noise(
@@ -179,6 +179,7 @@ def prepare_obs(
     obs: ObsData,
     rgb_dict: Optional[SingleStepViewData] = None,
     meta: EnvMetaInfo,
+    is_train: bool = True
     ) -> ViewPatchData:
     assert not (rgb_dict is not None and "rgb" in obs)
     rgb_dict = rgb_dict or obs.pop("rgb")
@@ -203,6 +204,7 @@ def prepare_obs(
                 rgb_dict_this_step[view],
                 segm_dict_this_step[view],
                 objects,
+                is_train
             )
             obs_list["objects"]["bbox"][view].append(bboxes)
             obs_list["objects"]["cropped_img"][view].append(cropped_imgs)
@@ -227,11 +229,12 @@ def get_obs_token_this_step(
         obs: ObsData, 
         meta_info: EnvMetaInfo, 
         policy: VIMAPolicy, 
-        device: Device
+        device: Device,
+        is_train: bool = True
     ) -> Tuple[ObsTokenEmbedding, ObsMask]:
     obs["ee"] = np.asarray(obs["ee"])
     obs = add_batch_dim(obs)
-    obs: PreparedObj = prepare_obs(obs=obs, rgb_dict=None, meta=meta_info).to_torch_tensor(
+    obs: PreparedObj = prepare_obs(obs=obs, rgb_dict=None, meta=meta_info, is_train=is_train).to_torch_tensor(
         device=device
     )
     obs_token_embedding_this_step, obs_mask_this_step = policy.forward_obs_token(obs)

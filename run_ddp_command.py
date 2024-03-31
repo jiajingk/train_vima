@@ -1,5 +1,6 @@
 import os
 import json
+import time
 from dotenv import dotenv_values
 from remote_control.exec import direct_remote_execute, remote_execute_under_py_venv
 from remote_control.util import send_small_file_to_server, execute, pull_latest_weight, send_large_file_to_server
@@ -8,7 +9,7 @@ from typing import List
 
 IPAddress = str
 
-def put_latest_weight(remote_ips: List[IPAddress], path):
+def clean_parent_weight(remote_ips: List[IPAddress]):
     for remote_ip in remote_ips:
         config = {
             "pem_file_path": dotenv_values('.env').get("AWS_PEM_PATH"),
@@ -19,20 +20,29 @@ def put_latest_weight(remote_ips: List[IPAddress], path):
             config,
             'rm parent_model/*.ckpt'
         )
+
+def put_latest_weight(remote_ips: List[IPAddress], path):
+    for remote_ip in remote_ips:
+        config = {
+            "pem_file_path": dotenv_values('.env').get("AWS_PEM_PATH"),
+            "server_ip": remote_ip,
+            "username": "ubuntu"
+        }
         send_large_file_to_server(
             config,
             path,
             'parent_model'
         )
 
-def get_latest_weight(remote_ips: List[IPAddress]):
+def get_latest_weight(remote_ips: List[IPAddress]) -> str:
     master_ip = remote_ips[0]
     config = {
         "pem_file_path": dotenv_values('.env').get("AWS_PEM_PATH"),
         "server_ip": master_ip,
         "username": "ubuntu"
     }
-    pull_latest_weight(config, "saved_model", "saved_model")
+    name = pull_latest_weight(config, "saved_model", "saved_model")
+    return name
 
 def install_ubuntu_dependencies(remote_ips: List[IPAddress]):
     with open(os.path.join('remote_control', 'env_install.sh'), 'r') as f:
@@ -131,13 +141,50 @@ def kill_all_tmux(remote_ips: List[IPAddress]):
         execute(config, f"tmux wait-for done")
         execute(config, f"tmux kill-session -t {tmux_session}")
 
+
+def keep_training_alive(remote_ips: List[IPAddress], epoch: int):
+    master_ip = remote_ips[0]
+    config = {
+        "pem_file_path": dotenv_values('.env').get("AWS_PEM_PATH"),
+        "server_ip": master_ip,
+        "username": "ubuntu"
+    }
+    def is_live(ssh_config):
+        tmux_session_name = 'command_execution'
+        command = f"tmux list-panes -t {tmux_session_name} -F '#{{pane_current_command}}'"
+        result, err = execute(ssh_config, command)
+        if err:
+            print(err)
+            return False
+        return 'python' in result.strip()
+    count = 0
+    while True:
+        if is_live(config):
+            count += 1
+            print(f"{count}: is alive")
+            time.sleep(300)
+            continue
+        print("detected training failure, restarting...")
+        time.sleep(60)
+        kill_all_tmux(remote_ips)
+        clean_parent_weight(remote_ips)
+        name = get_latest_weight(remote_ips)
+        latest_epoch = int(name.split('.')[0].split('_')[-1])
+        if latest_epoch >= epoch - 1:
+            return
+        put_latest_weight(remote_ips, f'saved_model\\{name}')
+        launch(remote_ips)
+        time.sleep(1800)
         
+
 if __name__ == "__main__":
     with open(dotenv_values('.env').get("AWS_IP_PATH")) as f:
         ip_lists = json.load(f)
-    kill_all_tmux(ip_lists)
-    #put_latest_weight(ip_lists, 'saved_model\\2024-03-27_colorful-hill-377_18.ckpt')
-    sync_with_git(ip_lists)
-    files = [ "train_ddp.py", ".env" ]; sync_small_files(ip_lists, files, "train_vima")
-    launch(ip_lists)
-    #get_latest_weight(ip_lists)
+    #kill_all_tmux(ip_lists)
+    #clean_parent_weight(ip_lists)
+    name = get_latest_weight(ip_lists)
+    #put_latest_weight(ip_lists, f'saved_model\\{name}')
+    #sync_with_git(ip_lists)
+    #files = [ "train_ddp.py", ".env" ]; sync_small_files(ip_lists, files, "train_vima")
+    #launch(ip_lists)
+    #keep_training_alive(ip_lists, 40)

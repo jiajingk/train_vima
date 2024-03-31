@@ -43,6 +43,7 @@ class FlattenedEvalRecord(TypedDict):
     timeout: Literal[0, 1]
 
 class EvalRecord(TypedDict):
+    seed: int
     action_trace: ActionTrace 
     task: str
     prompt: str
@@ -50,6 +51,7 @@ class EvalRecord(TypedDict):
     sucess: Literal[0, 1]
     failure: Literal[0, 1]
     timeout: Literal[0, 1]
+    bad_action: Literal[0, 1]
 
 @torch.no_grad()
 def main(model_path: str, task: TaskName, count: int):
@@ -193,9 +195,11 @@ def eval_placement_generalization(model_path: str, task: TaskName, num_exp: int)
         obs = env.reset()
         history = None
         eval_record: EvalRecord = {
-            "failure": False,
-            "sucess": False,
-            "timeout": False,
+            "seed": i,
+            "failure": 0,
+            "sucess": 0,
+            "timeout": 0,
+            "bad_action": 0,
             "task": run_config.task,
             "step_count": 0,
             "prompt": "",
@@ -228,16 +232,16 @@ def eval_placement_generalization(model_path: str, task: TaskName, num_exp: int)
         if (eval_record["failure"] == 0 
             and eval_record["sucess"] == 0
             and eval_record["timeout"] == 0):
-            break
+            eval_record["bad_action"] = 1
         
 
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model_path", type=str, default="saved_model\\2024-03-27_colorful-hill-377_18.ckpt")
-    parser.add_argument("--task", type=str, default="")
+    parser.add_argument("--model_path", type=str, default="2M.ckpt")
+    parser.add_argument("--task", type=str, default="rotate")
     parser.add_argument("--num_exp", type=int, default=50)
     task_param = parser.parse_args()
-    #eval_placement_generalization(task_param.model_path, task_param.task, task_param.num_exp)
-    main(task_param.model_path, 'rotate', task_param.num_exp)
+    eval_placement_generalization(task_param.model_path, task_param.task, task_param.num_exp)
+    #main(task_param.model_path, 'sweep_without_exceeding', task_param.num_exp)

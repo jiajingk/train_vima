@@ -104,7 +104,7 @@ def step(
         prompt_token_this_task = history["prompt_token"] 
         prompt_mask_this_task = history["prompt_mask"]
     meta_info = env.meta_info
-    obs_token_embedding_this_step, obs_mask_this_step = get_obs_token_this_step(obs, meta_info, policy, device)
+    obs_token_embedding_this_step, obs_mask_this_step = get_obs_token_this_step(obs, meta_info, policy, device, is_train=False)
     padded_obs_token_embeddings, padded_obs_masks = obs_obj_padding(
         history["obs_token_embeddings"] + [obs_token_embedding_this_step[0][0]],
         history["obs_masks"] + [obs_mask_this_step[0][0]],

@@ -166,3 +166,5 @@ tasks
 remote_destination.json
 *.pem
 log.txt
+*.ini
+test.py

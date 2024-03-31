@@ -78,7 +78,7 @@ def get_wandb_param():
 
 def get_lr_param() -> CosAnnealingParam:
     return {
-        "warmup_end_at_iters": 7000,
+        "warmup_end_at_iters": 0,
         "flatten_end_at_iters": 40000,
         "lr_decay_end_at_iters": 65000,
         "learning_rate": 1e-4,
@@ -97,7 +97,7 @@ def get_optimizer_param() -> OptimizerParam:
 def get_dataset_param() -> DatasetParam:
     return  {
         "data_pct_usage": 0.80,
-        "total_data_size_per_task": 40000,
+        "total_data_size_per_task": 20000,
         "validation_pct": 0.01,
         "source": "s3://vima",
         "tasks": [
@@ -121,7 +121,7 @@ def get_dataset_param() -> DatasetParam:
 def get_train_param() -> TrainParam:
     return {
         "model_size": "2M",
-        "total_epoch": 20,
+        "total_epoch": 40,
         "local_batch_size": 16,
         "distributed": True,
     }
@@ -499,13 +499,13 @@ def main_ddp(
         initalize_mode: InitalizeMode
     ):
     model_path, from_scratch = get_parent_model_path(model_repo_folder)
+    assert from_scratch is False
     if from_scratch is False:
         prefix = 'module.'
         mode = initalize_mode
     else:
         prefix = ''
         mode: InitalizeMode = 'random_init'
-    assert from_scratch is False
     policy, cfg, train_history = get_policy_and_cfg(
         model_path, 
         'cuda', 
@@ -611,6 +611,7 @@ def main_ddp(
     
 
 if __name__ == "__main__":
+    
     parser = argparse.ArgumentParser()
     parser.add_argument("--local_rank", type=int, default=-1)
     parser.add_argument("--world_size", type=int, default=-1)
@@ -618,4 +619,4 @@ if __name__ == "__main__":
     parser.add_argument("--master_port", type=str, default='29500')
     DDP_PARAM = parser.parse_args()
     assert get_ddp_param()["world_size"] * get_train_param()["local_batch_size"] == 128
-    main_ddp(os.path.join('..', 'parent_model'), 'random_init')
+    main_ddp(os.path.join('..', 'parent_model'), 'continous_from_ckpt')
