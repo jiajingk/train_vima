@@ -78,7 +78,7 @@ def get_wandb_param():
 
 def get_lr_param() -> CosAnnealingParam:
     return {
-        "warmup_end_at_iters": 0,
+        "warmup_end_at_iters": 7000,
         "flatten_end_at_iters": 40000,
         "lr_decay_end_at_iters": 65000,
         "learning_rate": 1e-4,
@@ -97,7 +97,7 @@ def get_optimizer_param() -> OptimizerParam:
 def get_dataset_param() -> DatasetParam:
     return  {
         "data_pct_usage": 0.80,
-        "total_data_size_per_task": 20000,
+        "total_data_size_per_task": 40000,
         "validation_pct": 0.01,
         "source": "s3://vima",
         "tasks": [
@@ -121,7 +121,7 @@ def get_dataset_param() -> DatasetParam:
 def get_train_param() -> TrainParam:
     return {
         "model_size": "2M",
-        "total_epoch": 40,
+        "total_epoch": 20,
         "local_batch_size": 16,
         "distributed": True,
     }
@@ -316,7 +316,7 @@ def batch_forward(
         "default"
     )
     unweigted_sample_losses = [
-        reduce_traj_loss_in_time_axis(traj_loss, lambda _: 1.0)
+        reduce_traj_loss_in_time_axis(traj_loss, lambda _: 1.0, normalize=False)
             for traj_loss in batch_losses
     ]
     weighted_sample_losses = [
@@ -494,17 +494,95 @@ def write_model_checkpoint(
     torch.save(ckpt, path)
 
 
+def eval_ddp(
+        model_repo_folder: str,
+        initalize_mode: InitalizeMode
+    ):
+    model_path, from_scratch = get_parent_model_path(model_repo_folder)
+    assert from_scratch is False
+    if '2M' in model_path:
+        prefix = ''
+    else:
+        prefix = 'module.'
+    if from_scratch is False:
+        mode = initalize_mode
+    else:
+        mode: InitalizeMode = 'random_init'
+    policy, _, _ = get_policy_and_cfg(
+        model_path, 
+        'cuda', 
+        prefix=prefix, 
+        mode=mode
+    )
+    freeze_t5_except_last_2_layer(policy)
+    policy = VimaPolicyWraper(single_process_policy=policy, device='cuda')
+    if get_train_param()["distributed"] is True:
+        init_process(
+            get_ddp_param()
+        )
+        policy = DDP(
+            policy,
+            find_unused_parameters=True,
+            static_graph=True,
+        )
+    dataloader, _ = get_dataloader(
+        get_train_param(),
+        get_dataset_param(),
+    )
+    criterion = torch.nn.CrossEntropyLoss()
+    optimizer = torch.optim.AdamW(
+        policy.parameters(), 
+        lr=get_optimizer_param()["inital_lr"], 
+        weight_decay=get_optimizer_param()["weight_decay"]
+    )
+    assert optimizer.__class__.__name__ == get_optimizer_param()["optimizer_name"]
+
+    model_parent = (
+        f"{get_train_param()['model_size']} from scratch" 
+            if from_scratch is True else os.path.basename(model_path)
+    )
+    wandb_config = {
+        "ddp_param": get_ddp_param(),
+        "train_param": get_train_param(),
+        "dataset_param": get_dataset_param(),
+        "lr_param": get_lr_param(),
+        "parent_model": model_parent
+    }
+    wandb.init(
+        project=get_wandb_param()["project"],
+        config=wandb_config,
+        group=get_wandb_param()["group"],
+        job_type=get_wandb_param()["job_type"]
+    )
+    _, valid_logs = validate(
+        policy,
+        dataloader, 
+        criterion,
+        0,
+        get_current_lr(optimizer)
+    )
+    log_to_wandb(
+        [
+            measure_unweighted_loss_per_task,
+            measure_unweighted_loss_per_attribute,
+            measure_avg_unweighted_loss,
+        ],
+        valid_logs, ("valid_epoch", 0), 'valid__epoch__'
+    )
+
 def main_ddp(
         model_repo_folder: str,
         initalize_mode: InitalizeMode
     ):
     model_path, from_scratch = get_parent_model_path(model_repo_folder)
     assert from_scratch is False
-    if from_scratch is False:
+    if '2M' in model_path:
+        prefix = ''
+    else:
         prefix = 'module.'
+    if from_scratch is False:
         mode = initalize_mode
     else:
-        prefix = ''
         mode: InitalizeMode = 'random_init'
     policy, cfg, train_history = get_policy_and_cfg(
         model_path, 
@@ -611,7 +689,6 @@ def main_ddp(
     
 
 if __name__ == "__main__":
-    
     parser = argparse.ArgumentParser()
     parser.add_argument("--local_rank", type=int, default=-1)
     parser.add_argument("--world_size", type=int, default=-1)

@@ -180,11 +180,11 @@ def keep_training_alive(remote_ips: List[IPAddress], epoch: int):
 if __name__ == "__main__":
     with open(dotenv_values('.env').get("AWS_IP_PATH")) as f:
         ip_lists = json.load(f)
-    #kill_all_tmux(ip_lists)
-    #clean_parent_weight(ip_lists)
-    name = get_latest_weight(ip_lists)
+    kill_all_tmux(ip_lists)
+    clean_parent_weight(ip_lists)
+    #name = get_latest_weight(ip_lists)
     #put_latest_weight(ip_lists, f'saved_model\\{name}')
-    #sync_with_git(ip_lists)
-    #files = [ "train_ddp.py", ".env" ]; sync_small_files(ip_lists, files, "train_vima")
-    #launch(ip_lists)
+    sync_with_git(ip_lists)
+    files = [ "train_ddp.py", ".env" ]; sync_small_files(ip_lists, files, "train_vima")
+    launch(ip_lists)
     #keep_training_alive(ip_lists, 40)
