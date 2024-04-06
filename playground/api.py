@@ -128,7 +128,6 @@ def step(
         prompt_token=prompt_token_this_task,
         prompt_token_mask=prompt_mask_this_task,
     )
-    
     actions, action_tokens = decode_last_step_action(predicted_action_tokens, policy)
     final_action = bin_action_to_bound_action(actions, [env.meta_info['action_bounds']], device)
     final_action = any_slice({k: v.cpu().numpy() for k, v in final_action.items()}, np.s_[0, 0])

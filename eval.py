@@ -71,10 +71,14 @@ def main(model_path: str, task: TaskName, count: int):
         display_debug_window=True,
         hide_arm_rgb=False)
     )
+    if '2M' in model_path:
+        prefix = ''
+    else:
+        prefix = 'module.'
     policy = create_policy_from_ckpt(
         run_config.ckpt, 
         run_config.device, 
-        prefix='module.'
+        prefix=prefix
     )
     policy.eval()
     env = create_env(run_config, env_config)
@@ -168,6 +172,7 @@ def eval_placement_generalization(model_path: str, task: TaskName, num_exp: int)
         ckpt=model_path,
         device="cuda"
     )
+    model_name = os.path.basename(model_path).split('.')[0]
     env_config = EnvConfig(
         use_time_wrapper=True,
         use_reset_wrapper=True,
@@ -228,7 +233,7 @@ def eval_placement_generalization(model_path: str, task: TaskName, num_exp: int)
                 eval_record["timeout"] = int(False)
             if done:
                 break
-        write_log_to_csv([eval_record], today, 'eval')
+        write_log_to_csv([eval_record], today, f'eval_{model_name}')
         if (eval_record["failure"] == 0 
             and eval_record["sucess"] == 0
             and eval_record["timeout"] == 0):
@@ -240,8 +245,8 @@ def eval_placement_generalization(model_path: str, task: TaskName, num_exp: int)
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_path", type=str, default="2M.ckpt")
-    parser.add_argument("--task", type=str, default="rotate")
+    parser.add_argument("--task", type=str, default="visual_manipulation")
     parser.add_argument("--num_exp", type=int, default=50)
     task_param = parser.parse_args()
-    eval_placement_generalization(task_param.model_path, task_param.task, task_param.num_exp)
-    #main(task_param.model_path, 'sweep_without_exceeding', task_param.num_exp)
+    #eval_placement_generalization(task_param.model_path, task_param.task, task_param.num_exp)
+    main(task_param.model_path, task_param.task, task_param.num_exp)

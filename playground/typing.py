@@ -45,6 +45,10 @@ class ImageToken(TypedDict):
     bbox: BBox
     mask: Mask
 
+class ImageObjToken(TypedDict):
+    cropped_img: CroppedImg
+    bbox: BBox
+
 View = Literal['front', 'top']
 Modality = Literal['segm', 'rgb']
 EndEffector =  Union[int, np.ndarray]
@@ -125,6 +129,18 @@ class ObjectPatch(TypedDict):
 class PreparedObj(TypedDict):
     ee: Union[int, np.ndarray]
     objects: ObjectPatch
+
+
+class ObjSegmData(TypedDict):
+    front: np.ndarray
+    top: np.ndarray
+    obj_info: List[ObjInfo]
+
+
+class PromptAsset(TypedDict):
+    placeholder_type: str
+    rgb: ViewData
+    segm: ObjSegmData
 
 
 ObsTokenEmbedding = FloatTensor # B x T x (num_view x num_obj) x D
@@ -236,8 +252,6 @@ class ObjList(TypedDict):
     objects: ViewPatchList
 
 
-class PromptAsset(TypedDict, total=False):
-    obj_info: List[ObjInfo]
 
 
 class AssetViewData(TypedDict):
@@ -252,7 +266,7 @@ class EnvHistory(TypedDict):
     prompt_token: Optional[PromptTokenEmbedding]
     prompt_mask: Optional[PromptMask]
     prompt: Optional[str]
-    prompt_assets: Optional[Union[PromptAsset, Dict[str, AssetViewData]]]
+    prompt_assets: Optional[Dict[str, PromptAsset]]
     obses: List[ObsData]
     
 
@@ -271,7 +285,7 @@ class EnvMetaInfo(TypedDict):
     robot_components: List[int]
     obj_id_to_info: Dict[int, ObjInfo]
     prompt: Optional[str]
-    prompt_assets: Optional[Union[PromptAsset, Dict[str, AssetViewData]]]
+    prompt_assets: Optional[Dict[str, PromptAsset]]
     steps: int
     success: bool
     failure: bool
@@ -309,7 +323,7 @@ class NormalizedTraj(TypedDict):
 class Env(Protocol):
     meta_info: EnvMetaInfo
     prompt: str
-    prompt_assets: Union[PromptAsset, Dict[str, AssetViewData]] 
+    prompt_assets: Dict[str, PromptAsset]
     time_step: int
     current_task: Optional[Traj]
 
@@ -599,3 +613,48 @@ TaskLevel = Literal[
 ]
 
 InitalizeMode = Literal['random_init', 'ckpt_init', 'continous_from_ckpt']
+
+SpecialToken = Literal[
+    "{base_obj}",
+    "{base_obj_1}",
+    "{base_obj_2}",
+    "{dragged_obj}",
+    "{dragged_obj_1}",
+    "{dragged_obj_2}",
+    "{dragged_obj_3}",
+    "{dragged_obj_4}",
+    "{dragged_obj_5}",
+    "{swept_obj}",
+    "{bounds}",
+    "{constraint}",
+    "{scene}",
+    "{demo_blicker_obj_1}",
+    "{demo_less_blicker_obj_1}",
+    "{demo_blicker_obj_2}",
+    "{demo_less_blicker_obj_2}",
+    "{demo_blicker_obj_3}",
+    "{demo_less_blicker_obj_3}",
+    "{start_scene}",
+    "{end_scene}",
+    "{before_twist_1}",
+    "{after_twist_1}",
+    "{before_twist_2}",
+    "{after_twist_2}",
+    "{before_twist_3}",
+    "{after_twist_3}",
+    "{frame_0}",
+    "{frame_1}",
+    "{frame_2}",
+    "{frame_3}",
+    "{frame_4}",
+    "{frame_5}",
+    "{frame_6}",
+    "{ring}",
+    "{hanoi_stand}",
+    "{start_scene_1}",
+    "{end_scene_1}",
+    "{start_scene_2}",
+    "{end_scene_2}",
+    "{start_scene_3}",
+    "{end_scene_3}",
+]

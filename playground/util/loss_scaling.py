@@ -79,10 +79,10 @@ def get_action_weigts(
         return get_default_axis_weight(1.0)
     elif method == "constant_scaling":
         weight = get_default_axis_weight(1.0)
-        weight["pose0_position_1"] = math.log(50) / math.log(100)
-        weight["pose1_position_1"] = math.log(50) / math.log(100)
-        weight["pose1_rotation_2"] = 10
-        weight["pose1_rotation_3"] = 10
+        weight["pose0_position_1"] = (math.log(50) / math.log(100)) * 1 / 10
+        weight["pose1_position_1"] = (math.log(50) / math.log(100)) * 1 / 10
+        weight["pose0_position_0"] = 1 / 10
+        weight["pose0_position_0"] = 1 / 10
         return weight
     raise AssertionError(f"{method} not implemented")
 

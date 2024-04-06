@@ -11,6 +11,7 @@ from playground.util.train import (
 from playground.util.loss_scaling import (
     get_action_weigts,
     get_task_weights,
+    get_default_axis_weight
 )
 from playground.util.reduce import (
     reduce_traj_loss_in_time_axis
@@ -47,7 +48,8 @@ from playground.typing import (
     PredDist, 
     Action, 
     ForwardMetaData,
-    InitalizeMode
+    InitalizeMode,
+    ActionAxisWeight
 )
 from playground.util.prompt import get_task_class
 from torch.utils.data import DataLoader
@@ -78,9 +80,9 @@ def get_wandb_param():
 
 def get_lr_param() -> CosAnnealingParam:
     return {
-        "warmup_end_at_iters": 7000,
-        "flatten_end_at_iters": 40000,
-        "lr_decay_end_at_iters": 65000,
+        "warmup_end_at_iters": 3250,
+        "flatten_end_at_iters": 9750,
+        "lr_decay_end_at_iters": 32500,
         "learning_rate": 1e-4,
         "min_lr": 1e-7, 
     }
@@ -121,7 +123,7 @@ def get_dataset_param() -> DatasetParam:
 def get_train_param() -> TrainParam:
     return {
         "model_size": "2M",
-        "total_epoch": 20,
+        "total_epoch": 10,
         "local_batch_size": 16,
         "distributed": True,
     }
@@ -295,6 +297,15 @@ def log_to_wandb(
         }))
 
 
+def custom_scaling() -> ActionAxisWeight:
+    weight = get_default_axis_weight(1.0)
+    weight["pose0_position_1"] = (math.log(50) / math.log(100)) * 1 / 10
+    weight["pose1_position_1"] = (math.log(50) / math.log(100)) * 1 / 10
+    weight["pose0_position_0"] = 1 / 10
+    weight["pose1_position_0"] = 1 / 10
+    return weight
+
+
 def batch_forward(
         policy: VimaPolicyWraper, 
         data: List[NormalizedTraj],
@@ -306,17 +317,14 @@ def batch_forward(
             pred_dist, target_action, forward_meta, criterion
         ) for pred_dist, target_action, forward_meta in batch_forward
     ]
-    axis_weight = get_action_weigts(
-        batch_losses,
-        "constant_scaling"
-    )
+    axis_weight = custom_scaling()
     task_weight = get_task_weights(
         None,
         None,
         "default"
     )
     unweigted_sample_losses = [
-        reduce_traj_loss_in_time_axis(traj_loss, lambda _: 1.0, normalize=False)
+        reduce_traj_loss_in_time_axis(traj_loss, lambda _: 1.0)
             for traj_loss in batch_losses
     ]
     weighted_sample_losses = [
@@ -499,7 +507,6 @@ def eval_ddp(
         initalize_mode: InitalizeMode
     ):
     model_path, from_scratch = get_parent_model_path(model_repo_folder)
-    assert from_scratch is False
     if '2M' in model_path:
         prefix = ''
     else:
@@ -575,7 +582,6 @@ def main_ddp(
         initalize_mode: InitalizeMode
     ):
     model_path, from_scratch = get_parent_model_path(model_repo_folder)
-    assert from_scratch is False
     if '2M' in model_path:
         prefix = ''
     else:
@@ -696,4 +702,4 @@ if __name__ == "__main__":
     parser.add_argument("--master_port", type=str, default='29500')
     DDP_PARAM = parser.parse_args()
     assert get_ddp_param()["world_size"] * get_train_param()["local_batch_size"] == 128
-    main_ddp(os.path.join('..', 'parent_model'), 'continous_from_ckpt')
+    main_ddp(os.path.join('..', 'parent_model'), 'ckpt_init')
