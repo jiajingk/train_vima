@@ -75,7 +75,7 @@ def get_wandb_param():
     return {
         "project": "vima",
         "group": "ddp",
-        "job_type": "train"
+        "job_type": "eval"
     }
 
 def get_lr_param() -> CosAnnealingParam:
@@ -98,9 +98,9 @@ def get_optimizer_param() -> OptimizerParam:
 
 def get_dataset_param() -> DatasetParam:
     return  {
-        "data_pct_usage": 0.80,
+        "data_pct_usage": 0.99,
         "total_data_size_per_task": 40000,
-        "validation_pct": 0.01,
+        "validation_pct": 0.0001,
         "source": "s3://vima",
         "tasks": [
             "follow_order",
@@ -354,14 +354,20 @@ def batch_forward(
     return batch_loss, batch_loss_log
 
 
+
+
 def validate(
         ddp_policy: VimaPolicyWraper,
         dataloader: Union[DistributedDataLoader, DataLoader], 
         criterion: torch.nn.CrossEntropyLoss,
         epoch_id: int,
-        curr_lr: float
+        curr_lr: float,
+        eval_mode: bool
     ) -> Tuple[float, List[LogRecord]]:
-    ddp_policy.eval()
+    if eval:
+        ddp_policy.eval()
+    else:
+        ddp_policy.train()
     if get_train_param()["distributed"] is True:
         dataloader.sampler.set_epoch(epoch_id)
     epoch_logs: List[LogRecord] = []
@@ -381,13 +387,21 @@ def validate(
                 "lr": curr_lr
             } for log_record in batch_logs
         ]
+        if eval_mode is True:
+            surfix = 'eval_mode'
+        else:
+            surfix = 'train_mode'
+        write_log_to_csv(
+            batch_logs, wandb.run.id, f'eval_{surfix}'
+        )
+        
         log_to_wandb(
             [
                 measure_unweighted_loss_per_task,
                 measure_unweighted_loss_per_attribute,
                 measure_avg_unweighted_loss,
             ],
-            batch_logs, ("valid_batch", get_valid_batch_count(batch_id, epoch_id)), 'valid__batch__'
+            batch_logs, ("valid_batch", get_valid_batch_count(batch_id, epoch_id)), f'valid__batch__{surfix}__'
         )
         epoch_logs += batch_logs
         epoch_loss += batch_loss.item()
@@ -409,56 +423,6 @@ def records_to_trajs(
         return list(normalize_traj(deseralize(raw_record)) for raw_record in raw_records)
     raise AssertionError(f'unknown source {get_dataset_param()["source"]}')
 
-
-def train_one_epoch(
-        policy: VimaPolicyWraper,
-        dataloader: Union[DistributedDataLoader, DataLoader], 
-        criterion: torch.nn.CrossEntropyLoss,
-        optimizer: torch.optim.AdamW,
-        epoch_id: int,
-    ) -> Tuple[float, List[LogRecord]]:
-    policy.train()
-    if get_train_param()["distributed"] is True:
-        dataloader.sampler.set_epoch(epoch_id)
-    epoch_logs: List[LogRecord] = []
-    epoch_loss = 0
-    for batch_id, records in (pbar := tqdm(enumerate(dataloader))):
-        trajs = records_to_trajs(records)
-        curr_lr = update_and_get_lr(optimizer, batch_id, epoch_id)
-        optimizer.zero_grad()
-        batch_loss, batch_logs = batch_forward(
-            policy,
-            trajs,
-            criterion
-        )
-        batch_logs = [
-            {
-                **log_record,
-                "batch_id": batch_id,
-                "epoch_id": epoch_id,
-                "lr": curr_lr
-            } for log_record in batch_logs
-        ]
-        log_to_wandb(
-            [
-                measure_unweighted_loss_per_task,
-                measure_unweighted_loss_per_attribute,
-                measure_avg_lr,
-                measure_avg_unweighted_loss,
-            ],
-            batch_logs, ("train_batch", get_train_batch_count(batch_id, epoch_id)), 'train__batch__'
-        )
-        batch_loss.backward()
-        torch.nn.utils.clip_grad_norm_(
-            policy.parameters(),
-            get_clip_grad_norm()
-        )
-        optimizer.step()
-        epoch_logs += batch_logs
-        epoch_loss += batch_loss.item()        
-        pbar.set_description(f"train {epoch_id}: weighted loss {batch_loss.item()}")
-    epoch_loss /= (batch_id + 1)
-    return epoch_loss, epoch_logs
 
 
 def get_parent_model_path(model_repo_folder: str) -> Tuple[str, bool]:
@@ -568,7 +532,8 @@ def eval_ddp(
         dataloader, 
         criterion,
         0,
-        get_current_lr(optimizer)
+        get_current_lr(optimizer),
+        eval_mode=True
     )
     log_to_wandb(
         [
@@ -576,124 +541,32 @@ def eval_ddp(
             measure_unweighted_loss_per_attribute,
             measure_avg_unweighted_loss,
         ],
-        valid_logs, ("valid_epoch", 0), 'valid__epoch__'
+        valid_logs, ("valid_epoch", 0), 'valid__epoch__eval_mode__'
     )
 
-def main_ddp(
-        model_repo_folder: str,
-        initalize_mode: InitalizeMode
-    ):
-    model_path, from_scratch = get_parent_model_path(model_repo_folder)
-    if '2M' in model_path:
-        prefix = ''
-    else:
-        prefix = 'module.'
-    if from_scratch is False:
-        mode = initalize_mode
-    else:
-        mode: InitalizeMode = 'random_init'
-    policy, cfg, train_history = get_policy_and_cfg(
-        model_path, 
-        'cuda', 
-        prefix=prefix, 
-        mode=mode
-    )
-    freeze_t5_except_last_2_layer(policy)
-    policy = VimaPolicyWraper(single_process_policy=policy, device='cuda')
-    if get_train_param()["distributed"] is True:
-        init_process(
-            get_ddp_param()
-        )
-        policy = DDP(
-            policy,
-            find_unused_parameters=True,
-            static_graph=True,
-        )
-    train_loader, valid_loader = get_dataloader(
+    dataloader, _ = get_dataloader(
         get_train_param(),
         get_dataset_param(),
     )
-    epochs = get_train_param()["total_epoch"]
-    
-    criterion = torch.nn.CrossEntropyLoss()
-    optimizer = torch.optim.AdamW(
-        policy.parameters(), 
-        lr=get_optimizer_param()["inital_lr"], 
-        weight_decay=get_optimizer_param()["weight_decay"]
+
+    _, valid_logs = validate(
+        policy,
+        dataloader, 
+        criterion,
+        0,
+        get_current_lr(optimizer),
+        eval_mode=False
     )
-    assert optimizer.__class__.__name__ == get_optimizer_param()["optimizer_name"]
-    if train_history is None:
-        inital_epoch = 0
-    else:
-        inital_epoch = train_history["last_epoch"] + 1
-        optimizer.load_state_dict(train_history["optimizer_state_dict"])
-    model_parent = (
-        f"{get_train_param()['model_size']} from scratch" 
-            if from_scratch is True else os.path.basename(model_path)
+    log_to_wandb(
+        [
+            measure_unweighted_loss_per_task,
+            measure_unweighted_loss_per_attribute,
+            measure_avg_unweighted_loss,
+        ],
+        valid_logs, ("valid_epoch", 0), 'valid__epoch__train_mode__'
     )
-    wandb_config = {
-        "ddp_param": get_ddp_param(),
-        "train_param": get_train_param(),
-        "dataset_param": get_dataset_param(),
-        "lr_param": get_lr_param(),
-        "parent_model": model_parent
-    }
-    wandb.init(
-        project=get_wandb_param()["project"],
-        config=wandb_config,
-        group=get_wandb_param()["group"],
-        job_type=get_wandb_param()["job_type"]
-    )
-    today: str = datetime.today().strftime('%Y-%m-%d')
-    run_id: str = f"{today}_{wandb.run.name}"
-    for epoch in range(inital_epoch, epochs):
-        _, train_logs = train_one_epoch(
-            policy,
-            train_loader,
-            criterion,
-            optimizer,
-            epoch,
-        )
-        log_to_wandb(
-            [
-                measure_unweighted_loss_per_task,
-                measure_unweighted_loss_per_attribute,
-                measure_avg_lr,
-                measure_avg_unweighted_loss,
-            ],
-            train_logs, ("train_epoch", epoch), 'train__epoch__'
-        )
-        if epoch > 0:
-            write_model_checkpoint(
-                run_id, 
-                epoch, 
-                optimizer.state_dict(),
-                policy.state_dict(),
-                cfg
-            )
-        if valid_loader is not None:
-            _, valid_logs = validate(
-                policy,
-                valid_loader, 
-                criterion,
-                epoch,
-                get_current_lr(optimizer)
-            )
-            log_to_wandb(
-                [
-                    measure_unweighted_loss_per_task,
-                    measure_unweighted_loss_per_attribute,
-                    measure_avg_unweighted_loss,
-                ],
-                valid_logs, ("valid_epoch", epoch), 'valid__epoch__'
-            )
-    write_model_checkpoint(
-        run_id, 
-        epoch, 
-        optimizer.state_dict(),
-        policy.state_dict(),
-        cfg
-    )
+
+
     
 
 if __name__ == "__main__":
