@@ -64,10 +64,28 @@ def receive_large_file_to_server(
             print(f"File successfully received {ssh_config['server_ip']}:{src_file_path}")
 
 
+def pull_latest_file(
+        ssh_config: SSHConfig, 
+        src_folder: str, 
+        dst_folder: str,
+        glob_pattern: str
+    ) -> str:
+    command = f'find {src_folder} -name "{glob_pattern}" -ls -printf "%T@ %Tc %p\n" | sort -n'
+    output, err = execute(ssh_config, command)
+    assert len(err) == 0, err
+    print(output)
+    last_line = output.strip().split('\n')[-1]
+    last_location = last_line.split(' ')[-1].strip()
+    file_name = last_location.split('/')[-1].strip()
+    print(last_location)
+    receive_large_file_to_server(ssh_config, last_location, f"{dst_folder}/{file_name}")
+    return file_name
+
+
 def pull_latest_weight(
         ssh_config: SSHConfig, 
         src_folder: str, 
-        dst_folder: str
+        dst_folder: str,
     ) -> str:
     command = f'find {src_folder} -name "*.ckpt" -ls -printf "%T@ %Tc %p\n" | sort -n'
     output, err = execute(ssh_config, command)

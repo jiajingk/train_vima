@@ -80,9 +80,9 @@ def get_wandb_param():
 
 def get_lr_param() -> CosAnnealingParam:
     return {
-        "warmup_end_at_iters": 3250,
-        "flatten_end_at_iters": 9750,
-        "lr_decay_end_at_iters": 32500,
+        "warmup_end_at_iters": 7000,
+        "flatten_end_at_iters": 24000,
+        "lr_decay_end_at_iters": 65000,
         "learning_rate": 1e-4,
         "min_lr": 1e-7, 
     }
@@ -123,7 +123,7 @@ def get_dataset_param() -> DatasetParam:
 def get_train_param() -> TrainParam:
     return {
         "model_size": "2M",
-        "total_epoch": 10,
+        "total_epoch": 20,
         "local_batch_size": 16,
         "distributed": True,
     }
@@ -297,12 +297,12 @@ def log_to_wandb(
         }))
 
 
-def custom_scaling() -> ActionAxisWeight:
+def get_custom_scaling() -> ActionAxisWeight:
     weight = get_default_axis_weight(1.0)
-    weight["pose0_position_1"] = (math.log(50) / math.log(100)) * 1 / 10
-    weight["pose1_position_1"] = (math.log(50) / math.log(100)) * 1 / 10
-    weight["pose0_position_0"] = 1 / 10
-    weight["pose1_position_0"] = 1 / 10
+    weight["pose0_position_0"] = 1 / 5
+    weight["pose0_position_1"] = 1 / 8
+    weight["pose1_position_0"] = 1 / 3
+    weight["pose1_position_1"] = 1 / 5
     return weight
 
 
@@ -317,7 +317,7 @@ def batch_forward(
             pred_dist, target_action, forward_meta, criterion
         ) for pred_dist, target_action, forward_meta in batch_forward
     ]
-    axis_weight = get_default_axis_weight(1.0)
+    axis_weight = get_custom_scaling()
     task_weight = get_task_weights(
         None,
         None,
@@ -345,6 +345,7 @@ def batch_forward(
                     "task_weight": task_weight
                 }
             ),
+            "step_size": forward_meta["action_length"],
             "task": forward_meta["task"],
             "local_rank": 0 if DDP_PARAM is None else get_ddp_param()["local_rank"]
         }
@@ -354,6 +355,7 @@ def batch_forward(
     return batch_loss, batch_loss_log
 
 
+@torch.no_grad()
 def validate(
         ddp_policy: VimaPolicyWraper,
         dataloader: Union[DistributedDataLoader, DataLoader], 
@@ -381,6 +383,9 @@ def validate(
                 "lr": curr_lr
             } for log_record in batch_logs
         ]
+        write_log_to_csv(
+            batch_logs, wandb.run.id, f'validate'
+        )
         log_to_wandb(
             [
                 measure_unweighted_loss_per_task,
@@ -439,6 +444,9 @@ def train_one_epoch(
                 "lr": curr_lr
             } for log_record in batch_logs
         ]
+        write_log_to_csv(
+            batch_logs, wandb.run.id, f'train'
+        )
         log_to_wandb(
             [
                 measure_unweighted_loss_per_task,
@@ -704,4 +712,4 @@ if __name__ == "__main__":
     parser.add_argument("--master_port", type=str, default='29500')
     DDP_PARAM = parser.parse_args()
     assert get_ddp_param()["world_size"] * get_train_param()["local_batch_size"] == 128
-    eval_ddp(os.path.join('.'), 'ckpt_init')
+    eval_ddp(os.path.join('..', 'parent_model'), 'ckpt_init')
