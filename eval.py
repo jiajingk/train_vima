@@ -248,5 +248,5 @@ if __name__ == "__main__":
     parser.add_argument("--task", type=str, default="visual_manipulation")
     parser.add_argument("--num_exp", type=int, default=50)
     task_param = parser.parse_args()
-    #eval_placement_generalization(task_param.model_path, task_param.task, task_param.num_exp)
-    main(task_param.model_path, task_param.task, task_param.num_exp)
+    eval_placement_generalization(task_param.model_path, task_param.task, task_param.num_exp)
+    #main(task_param.model_path, task_param.task, task_param.num_exp)

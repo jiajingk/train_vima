@@ -83,10 +83,10 @@ def get_optimizer_param() -> OptimizerParam:
 
 def get_dataset_param() -> DatasetParam:
     return  {
-        "data_pct_usage": 1.0,
-        "total_data_size_per_task": 4,
-        "validation_pct": 0.25,
-        "source": "local",
+        "data_pct_usage": 0.8,
+        "total_data_size_per_task": 40000,
+        "validation_pct": 0.01,
+        "source": "s3://vima",
         "tasks": [
             'follow_order',
             'manipulate_old_neighbor',
@@ -106,8 +106,8 @@ def get_dataset_param() -> DatasetParam:
 
 def get_train_param() -> TrainParam:
     return {
-        "total_epoch": 10,
-        "local_batch_size": 32,
+        "total_epoch": 1,
+        "local_batch_size": 16,
         "distributed": False,
         "model_size": '2M'
     }
@@ -255,6 +255,8 @@ def batch_forward(
         reduce_traj_loss_in_time_axis(traj_loss, lambda _: 1.0)
             for traj_loss in batch_losses
     ]
+    for unweigted_sample_loss in unweigted_sample_losses:
+        print(unweigted_sample_loss)
     weighted_sample_losses = [
         reduce_weighted_step_total_loss(
             unweigted_sample_loss, 
@@ -349,7 +351,7 @@ def train_one_epoch(
     for batch_id, records in (pbar := tqdm(enumerate(dataloader))):
         trajs = records_to_trajs(records)
         curr_lr = update_and_get_lr(optimizer, batch_id, epoch_id)
-        optimizer.zero_grad()
+        #optimizer.zero_grad()
         batch_loss, batch_logs = batch_forward(
             policy,
             trajs,
@@ -363,12 +365,14 @@ def train_one_epoch(
                 "lr": curr_lr
             } for log_record in batch_logs
         ]
+        """
         batch_loss.backward()
         torch.nn.utils.clip_grad_norm_(
             policy.parameters(),
             get_clip_grad_norm()
         )
         optimizer.step()
+        """
         epoch_logs += batch_logs
         epoch_loss += batch_loss.item()        
         pbar.set_description(f"train {epoch_id}: weighted loss {batch_loss.item()}")
@@ -486,4 +490,4 @@ def main(model_repo_folder):
     
 
 if __name__ == "__main__":
-    main(os.path.join('.', 'parent_model'))
+    main(os.path.join('.'))

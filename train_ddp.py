@@ -58,12 +58,14 @@ from tqdm import tqdm
 from typing import Tuple, List, Dict, Optional, Union, Callable
 from datetime import datetime
 from glob import glob
+from collections import namedtuple
 import torch
 import os
 import pandas as pd
 import math
 import argparse
 import wandb
+
 
 BatchLoss = Tensor
 LogRecord = Dict[str, float]
@@ -82,7 +84,7 @@ def get_lr_param() -> CosAnnealingParam:
     return {
         "warmup_end_at_iters": 7000,
         "flatten_end_at_iters": 24000,
-        "lr_decay_end_at_iters": 65000,
+        "lr_decay_end_at_iters": 97500,
         "learning_rate": 1e-4,
         "min_lr": 1e-7, 
     }
@@ -123,7 +125,7 @@ def get_dataset_param() -> DatasetParam:
 def get_train_param() -> TrainParam:
     return {
         "model_size": "2M",
-        "total_epoch": 20,
+        "total_epoch": 30,
         "local_batch_size": 16,
         "distributed": True,
     }
@@ -299,10 +301,18 @@ def log_to_wandb(
 
 def get_custom_scaling() -> ActionAxisWeight:
     weight = get_default_axis_weight(1.0)
-    weight["pose0_position_0"] = 1 / 5
-    weight["pose0_position_1"] = 1 / 8
-    weight["pose1_position_0"] = 1 / 3
-    weight["pose1_position_1"] = 1 / 5
+    weight["pose0_position_0"] = 1 / math.log(50)
+    weight["pose0_position_1"] = 1 / math.log(100)
+    weight["pose1_position_0"] = 1 / math.log(50)
+    weight["pose1_position_1"] = 1 / math.log(100)
+    weight["pose0_rotation_0"] = 1 / math.log(50)
+    weight["pose0_rotation_1"] = 1 / math.log(50)
+    weight["pose0_rotation_2"] = 1 / math.log(50)
+    weight["pose0_rotation_3"] = 1 / math.log(50)
+    weight["pose1_rotation_0"] = 1 / math.log(50)
+    weight["pose1_rotation_1"] = 1 / math.log(50)
+    weight["pose1_rotation_2"] = 1 / math.log(50)
+    weight["pose1_rotation_3"] = 1 / math.log(50)
     return weight
 
 
@@ -384,7 +394,7 @@ def validate(
             } for log_record in batch_logs
         ]
         write_log_to_csv(
-            batch_logs, wandb.run.id, f'validate'
+            batch_logs, wandb.run.id, f'validate_{epoch_id}'
         )
         log_to_wandb(
             [
@@ -445,7 +455,7 @@ def train_one_epoch(
             } for log_record in batch_logs
         ]
         write_log_to_csv(
-            batch_logs, wandb.run.id, f'train'
+            batch_logs, wandb.run.id, f'train_{epoch_id}'
         )
         log_to_wandb(
             [
@@ -524,7 +534,6 @@ def eval_ddp(
         mode = initalize_mode
     else:
         mode: InitalizeMode = 'random_init'
-    assert from_scratch is False
     policy, _, _ = get_policy_and_cfg(
         model_path, 
         'cuda', 
@@ -710,6 +719,15 @@ if __name__ == "__main__":
     parser.add_argument("--world_size", type=int, default=-1)
     parser.add_argument("--master_ip", type=str,  default='localhost')
     parser.add_argument("--master_port", type=str, default='29500')
-    DDP_PARAM = parser.parse_args()
+    parser.add_argument("--train_mode", type=str, default='random_init')
+    args = parser.parse_args()
+    DDPParam = namedtuple('DDP_PARAM', 'local_rank world_size master_ip master_port')
+    DDP_PARAM = DDPParam(
+        local_rank=args.local_rank,
+        world_size=args.world_size,
+        master_ip=args.master_ip,
+        master_port=args.master_port
+    )
     assert get_ddp_param()["world_size"] * get_train_param()["local_batch_size"] == 128
-    eval_ddp(os.path.join('..', 'parent_model'), 'ckpt_init')
+    assert args.train_mode in ('random_init', 'ckpt_init', 'continous_from_ckpt',)
+    main_ddp(os.path.join('..', 'parent_model'), args.train_mode)

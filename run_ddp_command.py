@@ -3,9 +3,15 @@ import json
 import time
 from dotenv import dotenv_values
 from remote_control.exec import direct_remote_execute, remote_execute_under_py_venv
-from remote_control.util import send_small_file_to_server, execute, pull_latest_weight, send_large_file_to_server, pull_latest_file
+from remote_control.util import (
+    send_small_file_to_server,
+    execute, 
+    pull_latest_weight,
+    pull_latest_file,
+    pull_all_files, 
+    send_large_file_to_server, )
 from typing import List
-
+from playground.typing import InitalizeMode
 
 IPAddress = str
 
@@ -45,6 +51,17 @@ def put_latest_weight(remote_ips: List[IPAddress], path):
             path,
             'parent_model'
         )
+
+def get_all_csv_logs(remote_ips: List[IPAddress]) -> None:
+    remote_ips: List[IPAddress]
+    for remote_ip in remote_ips:
+        config = {
+            "pem_file_path": dotenv_values('.env').get("AWS_PEM_PATH"),
+            "server_ip": remote_ip,
+            "username": "ubuntu"
+        }
+        pull_all_files(config, "train_vima", "offical", "*.csv")
+    
 
 def get_latest_csv_logs(remote_ips: List[IPAddress]) -> None:
     remote_ips: List[IPAddress]
@@ -131,7 +148,7 @@ def launch_eval(remote_ips: List[IPAddress]):
 
 
 
-def launch_train(remote_ips: List[IPAddress]):
+def launch_train(remote_ips: List[IPAddress], mode: InitalizeMode):
     wandb_api_key = dotenv_values('.env').get("WANDB_API_KEY")
     ddp_master_ip = dotenv_values('.env').get("DDP_MASTER_IP")
     ddp_master_port = dotenv_values('.env').get("DDP_MASTER_PORT")
@@ -141,7 +158,10 @@ def launch_train(remote_ips: List[IPAddress]):
             "cd train_vima",
             f"export WANDB_API_KEY={wandb_api_key}",
             "wandb login",
-            (f"python train_ddp.py --local_rank {i} --world_size 8 --master_ip {ddp_master_ip} --master_port {ddp_master_port}", False)
+            (f"python train_ddp.py --local_rank {i} "
+             f"--world_size 8 --master_ip {ddp_master_ip} "
+             f"--master_port {ddp_master_port} --train_mode {mode}"
+             , False)
         ]
         remote_execute_under_py_venv(commands, {
             "pem_file_path": dotenv_values('.env').get("AWS_PEM_PATH"),
@@ -216,7 +236,7 @@ def keep_training_alive(remote_ips: List[IPAddress], epoch: int):
         if latest_epoch >= epoch - 1:
             return
         put_latest_weight(remote_ips, f'saved_model\\{name}')
-        launch_train(remote_ips)
+        launch_train(remote_ips, 'continous_from_ckpt')
         time.sleep(1800)
 
 
@@ -225,14 +245,20 @@ def fresh_train(remote_ips: List[IPAddress]):
     clean_parent_weight(remote_ips)
     clean_csv_logs(remote_ips)
     files = [ "train_ddp.py", ".env" ]; sync_small_files(ip_lists, files, "train_vima")
-    launch_train(ip_lists)
+    launch_train(ip_lists, 'random_init')
+
+
 
 if __name__ == "__main__":
     with open(dotenv_values('.env').get("AWS_IP_PATH")) as f:
         ip_lists = json.load(f)
+    #get_all_csv_logs(ip_lists)
     #get_latest_csv_logs(ip_lists)
     #name = get_latest_weight(ip_lists)
     #put_latest_weight(ip_lists, f'saved_model\\{name}')
-    #sync_with_git(ip_lists)
+    sync_with_git(ip_lists)
     fresh_train(ip_lists)
-    keep_training_alive(ip_lists, 20)
+    #kill_all_tmux(ip_lists)
+    #files = [ "train_ddp.py", ".env" ]; sync_small_files(ip_lists, files, "train_vima")
+    #launch_train(ip_lists)
+    keep_training_alive(ip_lists)

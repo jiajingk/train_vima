@@ -64,6 +64,24 @@ def receive_large_file_to_server(
             print(f"File successfully received {ssh_config['server_ip']}:{src_file_path}")
 
 
+def pull_all_files(
+        ssh_config: SSHConfig, 
+        src_folder: str, 
+        dst_folder: str,
+        glob_pattern: str
+    ) -> List[str]:
+    command = f'find {src_folder} -name "{glob_pattern}" -ls -printf "%T@ %Tc %p\n" | sort -n'
+    output, err = execute(ssh_config, command)
+    assert len(err) == 0, err
+    downloaded_files = []
+    for line in output.strip().split('\n'):
+        location = line.split(' ')[-1].strip()
+        file_name = location.split('/')[-1].strip()
+        receive_large_file_to_server(ssh_config, location, f"{dst_folder}/{file_name}")
+        downloaded_files.append(file_name)
+    return downloaded_files
+
+
 def pull_latest_file(
         ssh_config: SSHConfig, 
         src_folder: str, 
