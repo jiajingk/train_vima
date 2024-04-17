@@ -2,7 +2,7 @@ from typing import Tuple, Optional, Literal
 import os
 import torch
 from vima import VIMAPolicy
-from playground.util.train import forward
+from playground.util.train import forward, forward_share
 from playground.typing import (
     NormalizedTraj,
     Device,
@@ -18,6 +18,30 @@ from vima.policy import VIMAPolicy
 from typing import Tuple, List, Optional
 import torch
 import os
+
+
+class VimaPolicyPaletoWraper(torch.nn.Module):
+    def __init__(
+        self,
+        *,
+        single_process_policy: VIMAPolicy,
+        device: Device
+        ):
+        super().__init__()
+        self.policy = single_process_policy
+        self.device = device
+
+
+    def forward(
+            self, 
+            data: List[NormalizedTraj]
+        ) -> List[Tuple[PredDist, Action, ForwardMetaData]]:
+        batch_preds = forward_share(
+            data,
+            self.device,
+            self.policy
+        )
+        return batch_preds
 
 
 class VimaPolicyWraper(torch.nn.Module):

@@ -721,8 +721,7 @@ if __name__ == "__main__":
     parser.add_argument("--master_port", type=str, default='29500')
     parser.add_argument("--train_mode", type=str, default='random_init')
     args = parser.parse_args()
-    DDPParam = namedtuple('DDP_PARAM', 'local_rank world_size master_ip master_port')
-    DDP_PARAM = DDPParam(
+    DDP_PARAM = namedtuple('DDPP', 'local_rank world_size master_ip master_port')(
         local_rank=args.local_rank,
         world_size=args.world_size,
         master_ip=args.master_ip,

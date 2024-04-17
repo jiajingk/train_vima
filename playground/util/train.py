@@ -10,7 +10,8 @@ from playground.typing import (
     PredDist,
     Criterion,
     ActionAxisWeight,
-    TaskWeight
+    TaskWeight,
+    SharedRepr
 )
 from playground.util.prepare_batch import prepare_batch_obs_action_tokens
 from playground.util.prompt import get_task_class
@@ -75,6 +76,38 @@ def extract_action(
         num_obj_detected: int
     ) -> Tensor:
     return tokens[:content_lenght][num_obj_detected - 1 :: num_obj_detected + 1, batch_id, :].clone()
+
+
+def forward_share(
+        trajs: List[NormalizedTraj], 
+        device: Device, 
+        policy: VIMAPolicy
+    ) -> List[Tuple[SharedRepr, Action, ForwardMetaData]]:
+    tokens_out, decode_metas = decode_observation_and_prompt(
+        trajs, device, policy
+    )
+    results = []
+    for i, decode_meta in enumerate(decode_metas):
+        n_max_objs = decode_meta["n_max_objs"]
+        predicted_action_tokens = extract_action(
+            tokens_out, i, decode_meta["token_lengths"], n_max_objs
+        )
+        target_action = decode_meta["target_actions"]
+        results.append(
+            (
+                predicted_action_tokens, 
+                decode_meta["target_actions"],
+                {
+                    "is_rotation": decode_meta["is_rotation"],
+                    "action_length": target_action["pose0_position"].shape[0],
+                    "prompt": decode_meta["prompt"],
+                    "task": decode_meta["task"],
+                }
+            )
+        )
+    return results
+
+
 
 
 def forward(

@@ -658,3 +658,6 @@ SpecialToken = Literal[
     "{start_scene_3}",
     "{end_scene_3}",
 ]
+
+
+SharedRepr = Tensor
