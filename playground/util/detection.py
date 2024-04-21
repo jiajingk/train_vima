@@ -13,7 +13,7 @@ def get_mrcnn():
     return DefaultPredictor(get_mrcnn_cfg())
 
 def get_mrcnn_cfg():
-    ckpt_path = os.path.join(pathlib.Path(__file__).parent.resolve(), 'mask_rcnn.pth')
+    ckpt_path = 'mask_rcnn.pth'
     ckpt = torch.load(ckpt_path)
     cfg: CfgNode = get_cfg()
     ckpt_cfg = ckpt.pop("cfg")

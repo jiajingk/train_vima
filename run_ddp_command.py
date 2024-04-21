@@ -176,6 +176,8 @@ def sync_with_git(remote_ips: List[IPAddress]):
         "git clone https://github.com/jiajingk/train_vima.git",
         "cd train_vima",
         "wget https://huggingface.co/VIMA/VIMA/resolve/main/2M.ckpt",
+        "wget https://huggingface.co/VIMA/VIMA/resolve/main/mask_rcnn.pth",
+        "python -m pip install git+https://github.com/facebookresearch/detectron2.git"
     ]
     for remote_ip in remote_ips:
         remote_execute_under_py_venv(commands, {
@@ -252,7 +254,7 @@ def fresh_train(remote_ips: List[IPAddress]):
 if __name__ == "__main__":
     with open(dotenv_values('.env').get("AWS_IP_PATH")) as f:
         ip_lists = json.load(f)
-    get_all_csv_logs(ip_lists)
+    sync_with_git(ip_lists)
     #get_latest_csv_logs(ip_lists)
     #name = get_latest_weight(ip_lists)
     #put_latest_weight(ip_lists, f'saved_model\\{name}')
