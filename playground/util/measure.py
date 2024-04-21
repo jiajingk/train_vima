@@ -74,14 +74,6 @@ def measure_traj_metrics(
             pred_dist, target_action, criterion, pred_mapper, target_mapper, t_step
         ) for t_step in range(total_time_step)
     ]
-    if forward_meta["task"].lower() in ("twist", "rotate"):
-        return traj_metrics_measure
-    for step_measure in traj_metrics_measure:
-        for action_type in step_measure:
-            if 'rotation' in action_type:
-                for i in range(len(step_measure[action_type])):
-                    step_measure[action_type][i] *= 0.0
-                
     return traj_metrics_measure
 
 

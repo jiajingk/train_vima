@@ -22,6 +22,7 @@ from playground.typing import (
     ObsTokenEmbedding,
     ObsMask,
     SingleStepViewData,
+    SingleStepSegmData,
     ViewPatchData,
     EnvMetaInfo,
     ObjList,
@@ -30,6 +31,10 @@ from playground.typing import (
     ViewData,
 )
 from torch.distributions.categorical import Categorical
+from playground.util.detection import get_segm
+
+
+
 
 def pad_to_square(cropped_img: np.ndarray) -> np.ndarray:
     diff = abs(cropped_img.shape[1] - cropped_img.shape[2])
@@ -172,21 +177,30 @@ def prepare_view_obj_list(
             (bboxes, cropped_imgs, mask,), n_pad
         )
     return bboxes, cropped_imgs, mask
-    
 
+def get_segm_dict(rgb_dict: SingleStepViewData) -> SingleStepSegmData:
+
+    return {
+        "front": rearrange(get_segm(rearrange(rgb_dict["front"], "1 c w h -> w h c")), "w h -> 1 w h "),
+        "top":  rearrange(get_segm(rearrange(rgb_dict["top"], "1 c w h -> w h c")), "w h -> 1 w h "),
+    }
+  
 def prepare_obs(
-    *,
-    obs: ObsData,
-    rgb_dict: Optional[SingleStepViewData] = None,
-    meta: EnvMetaInfo,
-    is_train: bool = True
+        *,
+        obs: ObsData,
+        rgb_dict: Optional[SingleStepViewData] = None,
+        meta: EnvMetaInfo,
+        is_train: bool = True
     ) -> ViewPatchData:
     assert not (rgb_dict is not None and "rgb" in obs)
     rgb_dict = rgb_dict or obs.pop("rgb")
-    segm_dict = obs.pop("segm")
+    
+    segm_dict = get_segm_dict(rgb_dict)
     views: List[View] = sorted(rgb_dict.keys())
     assert meta["n_objects"] == len(meta["obj_id_to_info"])
-    objects = list(meta["obj_id_to_info"].keys())
+    objects = list(set(
+        i for i in np.concatenate( [ np.unique(segm_dict["front"]), np.unique(segm_dict["top"]) ] )
+    ))
     L_obs = get_batch_size(obs)
     obs_list: ObjList = {
         "ee": obs["ee"],
@@ -293,3 +307,4 @@ def prepare_obs_forward(
     obs_tokens_to_forward = obs_tokens_to_forward.transpose(0, 1)
     obs_masks_to_forward = obs_masks_to_forward.transpose(0, 1)
     return obs_tokens_to_forward, obs_masks_to_forward
+

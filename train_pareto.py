@@ -37,7 +37,13 @@ from playground.typing import (
     DatasetParam,
     CosAnnealingParam,
     TrainHistory,
-    ActionAxisWeight
+    ActionAxisWeight,
+    SharedRepr
+)
+from playground.util.pareto import (
+    gradient_normalizers, 
+    MinNormSolver,
+    MinNormSolverNumpy,
 )
 from playground.util.log import (
     measure_unweighted_loss_per_task_per_attribute,
@@ -48,8 +54,9 @@ from playground.util.log import (
 )
 from playground.util.prompt import get_task_class
 from torch.utils.data import DataLoader
+from torch.autograd import Variable
 from tqdm import tqdm
-from typing import Tuple, List, Dict, Optional, Union
+from typing import Tuple, List, Dict, Optional, Union, Literal
 from datetime import datetime
 from glob import glob
 import torch
@@ -66,9 +73,9 @@ DDP_PARAM: Optional[DDPParam] = None
 
 def get_lr_param() -> CosAnnealingParam:
     return {
-        "warmup_end_at_iters": 7000,
-        "flatten_end_at_iters": 24000,
-        "lr_decay_end_at_iters": 48000,
+        "warmup_end_at_iters": 0,
+        "flatten_end_at_iters": 100,
+        "lr_decay_end_at_iters": 1000,
         "learning_rate": 1e-4,
         "min_lr": 1e-7, 
     }
@@ -85,9 +92,9 @@ def get_optimizer_param() -> OptimizerParam:
 
 def get_dataset_param() -> DatasetParam:
     return  {
-        "data_pct_usage": 0.8,
-        "total_data_size_per_task": 40000,
-        "validation_pct": 0.01,
+        "data_pct_usage": 0.75,
+        "total_data_size_per_task": 32,
+        "validation_pct": 0.25,
         "source": "s3://vima",
         "tasks": [
             'follow_order',
@@ -108,7 +115,7 @@ def get_dataset_param() -> DatasetParam:
 
 def get_train_param() -> TrainParam:
     return {
-        "total_epoch": 1,
+        "total_epoch": 300,
         "local_batch_size": 16,
         "distributed": False,
         "model_size": '2M'
@@ -230,38 +237,130 @@ def update_and_get_lr(
         param_group['lr'] = lr
     return lr
 
+AXIS = (
+    "pose0_position_0",
+    "pose0_position_1",
+    "pose1_position_0",
+    "pose1_position_1",
+    "pose0_rotation_0",
+    "pose0_rotation_1",
+    "pose0_rotation_2",
+    "pose0_rotation_3",
+    "pose1_rotation_0",
+    "pose1_rotation_1",
+    "pose1_rotation_2",
+    "pose1_rotation_3",
+)
+
+PerTaskGrad = Tensor
+PerTaskLoss = float
+
+
+def measure_axis_dim_grad_loss(
+        shared_repr: SharedRepr, 
+        policy: VimaPolicyWraper) -> Dict[str, Tuple[PerTaskGrad, PerTaskLoss]]:
+    policy.policy.action_decoder(shared_repr)
+
+
 def solve_pareto_weight(
         policy: VimaPolicyWraper, 
         data: List[NormalizedTraj],
         criterion: Criterion,
         optimizer: torch.optim.AdamW,
-    ) -> List[ActionAxisWeight]:
+        gradient_normalizer: Literal['l2', 'loss', 'loss+', 'none']
+    ) -> ActionAxisWeight:
     optimizer.zero_grad()
-    batch_forward_result = forward_share(
-        data,
-        policy.device,
-        policy.policy
+    with torch.no_grad():
+        batch_forward_result = forward_share(
+            data,
+            policy.device,
+            policy.policy
+        )
+    axis_mapping = {
+        'pose0_position': (0, 1),
+        'pose1_position': (0, 1),
+        'pose0_rotation': (0, 1, 2, 3),
+        'pose1_rotation': (0, 1, 2, 3),
+    }
+    per_attr_gradient: Dict[str, List[Tensor]] = {
+        k: [] for k in AXIS
+    }
+    per_attr_loss = {
+        k: 0.0 for k in AXIS
+    }
+    for dim_name, axises in axis_mapping.items():
+        for axis in axises:
+            optimizer.zero_grad()
+            attr_loss = torch.tensor(0.0, device=policy.device)
+            shared_repr_vars: List[Tensor] = []
+            for (shared_repr, target_action, _) in batch_forward_result:
+                shared_repr_var = Variable(shared_repr.data.clone(), requires_grad=True)
+                shared_repr_vars.append(shared_repr_var)
+                dist: Tensor = policy.policy.action_decoder._decoders[dim_name].mlps[axis](shared_repr_var)
+                traj_losses: List[Tensor] = [
+                    criterion(dist[t_step], target_action[dim_name][t_step][axis].long())
+                        for t_step in range(dist.shape[0])
+                ]   
+                reduced_traj_loss = torch.mean(torch.stack(traj_losses))           
+                attr_loss += reduced_traj_loss
+            attr_loss /= len(batch_forward_result)
+            attr_loss.backward()
+            per_attr_loss[f"{dim_name}_{axis}"] =  attr_loss.item()
+            combined_shared_grad = torch.stack([
+                torch.mean(shared_repr_var.grad.data.clone(), dim=0) 
+                    for shared_repr_var in shared_repr_vars
+            ], dim=0).transpose(0, 1)
+            combined_shared_grad = Variable(
+                combined_shared_grad, requires_grad=False
+            )
+            per_attr_gradient[f"{dim_name}_{axis}"].append(
+                combined_shared_grad
+            )
+            shared_repr_var.grad.data.zero_()
+    gn = gradient_normalizers(
+        per_attr_gradient, 
+        per_attr_loss, 
+        gradient_normalizer
     )
-    for (shared_repr, action, forward_meta) in batch_forward_result:
-        ...
-
+    for t in AXIS:
+        for gr_i in range(len(per_attr_gradient[t])):
+            per_attr_gradient[t][gr_i] = per_attr_gradient[t][gr_i] / gn[t]
+    sol, _ = MinNormSolver.find_min_norm_element(
+        [
+            per_attr_gradient[t] for t in AXIS
+        ]
+    )
+    scale = {}
+    for i, t in enumerate(AXIS):
+        scale[t] = float(sol[i])
+    return scale
 
 def batch_forward(
         policy: VimaPolicyWraper, 
         data: List[NormalizedTraj],
-        criterion: Criterion,
+        criterion: Criterion
     ) -> Tuple[BatchLoss, List[LogRecord]]:
+    return batch_forward_pareto(
+        policy,
+        data, 
+        criterion,
+        get_action_weigts(data, "default")
+    )
+
+def batch_forward_pareto(
+        policy: VimaPolicyWraper, 
+        data: List[NormalizedTraj],
+        criterion: Criterion,
+        axis_weight: ActionAxisWeight
+    ) -> Tuple[BatchLoss, List[LogRecord]]:
+    print(axis_weight)
     batch_forward_result = policy(data)
     batch_losses = [
         measure_traj_individual_loss(
             pred_dist, target_action, forward_meta, criterion
         ) for pred_dist, target_action, forward_meta in batch_forward_result
     ]
-    axis_weight = get_action_weigts(
-        batch_losses,
-        "default"
-    )
-    scaling_factor = calculate_action_weight_factor(axis_weight)
+    
     task_weight = get_task_weights(
         None,
         None,
@@ -271,15 +370,13 @@ def batch_forward(
         reduce_traj_loss_in_time_axis(traj_loss, lambda _: 1.0)
             for traj_loss in batch_losses
     ]
-    for unweigted_sample_loss in unweigted_sample_losses:
-        print(unweigted_sample_loss)
     weighted_sample_losses = [
         reduce_weighted_step_total_loss(
             unweigted_sample_loss, 
             forward_meta,
             axis_weight,
             task_weight,
-        ) * scaling_factor
+        )
             for unweigted_sample_loss, (_, _, forward_meta) 
                 in zip(unweigted_sample_losses, batch_forward_result)
     ]
@@ -367,11 +464,19 @@ def train_one_epoch(
     for batch_id, records in (pbar := tqdm(enumerate(dataloader))):
         trajs = records_to_trajs(records)
         curr_lr = update_and_get_lr(optimizer, batch_id, epoch_id)
-        #optimizer.zero_grad()
-        batch_loss, batch_logs = batch_forward(
+        axis_weight = solve_pareto_weight(
             policy,
             trajs,
-            criterion
+            criterion,
+            optimizer,
+            "l2"
+        )
+        optimizer.zero_grad()
+        batch_loss, batch_logs = batch_forward_pareto(
+            policy,
+            trajs,
+            criterion,
+            axis_weight
         )
         batch_logs = [
             {
@@ -381,14 +486,12 @@ def train_one_epoch(
                 "lr": curr_lr
             } for log_record in batch_logs
         ]
-        """
         batch_loss.backward()
         torch.nn.utils.clip_grad_norm_(
             policy.parameters(),
             get_clip_grad_norm()
         )
         optimizer.step()
-        """
         epoch_logs += batch_logs
         epoch_loss += batch_loss.item()        
         pbar.set_description(f"train {epoch_id}: weighted loss {batch_loss.item()}")
@@ -451,7 +554,7 @@ def main(model_repo_folder):
     if from_scratch is True:
         inital_epoch = 0
     else:
-        inital_epoch = train_history["last_epoch"] + 1
+        inital_epoch = 0
     criterion = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.AdamW(
         policy.parameters(), 

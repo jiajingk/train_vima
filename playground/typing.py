@@ -661,3 +661,47 @@ SpecialToken = Literal[
 
 
 SharedRepr = Tensor
+
+AxisDim = Literal[
+    "pose0_position_0",
+    "pose0_position_1",
+    "pose1_position_0",
+    "pose1_position_1",
+    "pose0_rotation_0",
+    "pose0_rotation_1",
+    "pose0_rotation_2",
+    "pose0_rotation_3",
+    "pose1_rotation_0",
+    "pose1_rotation_1",
+    "pose1_rotation_2",
+    "pose1_rotation_3",
+]
+
+class PerActionAxisGrad(TypedDict):
+    pose0_position_0: Tensor
+    pose0_position_1: Tensor
+    pose1_position_0: Tensor
+    pose1_position_1: Tensor
+    pose0_rotation_0: Tensor
+    pose0_rotation_1: Tensor
+    pose0_rotation_2: Tensor
+    pose0_rotation_3: Tensor
+    pose1_rotation_0: Tensor
+    pose1_rotation_1: Tensor
+    pose1_rotation_2: Tensor
+    pose1_rotation_3: Tensor
+    
+
+class PerActionAxisLoss(TypedDict):
+    pose0_position_0: float
+    pose0_position_1: float
+    pose1_position_0: float
+    pose1_position_1: float
+    pose0_rotation_0: float
+    pose0_rotation_1: float
+    pose0_rotation_2: float
+    pose0_rotation_3: float
+    pose1_rotation_0: float
+    pose1_rotation_1: float
+    pose1_rotation_2: float
+    pose1_rotation_3: float
