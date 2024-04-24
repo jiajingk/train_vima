@@ -59,6 +59,29 @@ def measure_step_metrics(
     }
     return step_imitation_loss
 
+def rotation_masked_measure_traj_metrics(
+        pred_dist: PredDist, 
+        target_action: DiscreteAction, 
+        forward_meta: ForwardMetaData,
+        criterion: Criterion,
+        pred_mapper: PredDistMapper,
+        target_mapper: ActionMapper,
+    ) -> List[StepMeasure]:
+    total_time_step = forward_meta["action_length"]
+    traj_metrics_measure: List[StepMeasure] = [
+        measure_step_metrics(
+            pred_dist, target_action, criterion, pred_mapper, target_mapper, t_step
+        ) for t_step in range(total_time_step)
+    ]
+    if forward_meta["task"].lower() in ("twist", "rotate"):
+        return traj_metrics_measure
+    for step_measure in traj_metrics_measure:
+        for action_type in step_measure:
+            if 'rotation' in action_type:
+                for i in range(len(step_measure[action_type])):
+                    step_measure[action_type][i] *= 0.0
+    return traj_metrics_measure
+
 
 def measure_traj_metrics(
         pred_dist: PredDist, 
@@ -116,7 +139,8 @@ def measure_traj_individual_loss(
         pred_dist: PredDist, 
         target_action: DiscreteAction, 
         forward_meta: ForwardMetaData,
-        criterion: Criterion
+        criterion: Criterion,
+        rotation_mask: bool = False
     ) -> List[StepMeasure]:
     def extract_logits(
             pred_dist: PredDist, 
@@ -136,6 +160,15 @@ def measure_traj_individual_loss(
         axis: int
         t_step: int
         return action[dim_name][t_step][axis].long()
+    if rotation_mask is True:
+        return rotation_masked_measure_traj_metrics(
+            pred_dist, 
+            target_action, 
+            forward_meta, 
+            criterion, 
+            extract_logits, 
+            extract_action
+        )
     return measure_traj_metrics(
         pred_dist, 
         target_action, 
@@ -144,6 +177,7 @@ def measure_traj_individual_loss(
         extract_logits, 
         extract_action
     )
+    
 
 
 def to_flatten_step_measure(step_measure: StepMeasure, as_float: bool = True) -> FlattenedStepMeasure:

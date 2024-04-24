@@ -35,7 +35,9 @@ from playground.typing import (
     OptimizerParam,
     DatasetParam,
     CosAnnealingParam,
-    TrainHistory
+    TrainHistory,
+    FlattenedStepMeasure,
+    ForwardMetaData
 )
 from playground.util.log import (
     measure_unweighted_loss_per_task_per_attribute,
@@ -238,7 +240,7 @@ def batch_forward(
     batch_forward_result = policy(data)
     batch_losses = [
         measure_traj_individual_loss(
-            pred_dist, target_action, forward_meta, criterion
+            pred_dist, target_action, forward_meta, criterion, rotation_mask=True
         ) for pred_dist, target_action, forward_meta in batch_forward_result
     ]
     axis_weight = get_action_weigts(
@@ -351,7 +353,7 @@ def train_one_epoch(
     for batch_id, records in (pbar := tqdm(enumerate(dataloader))):
         trajs = records_to_trajs(records)
         curr_lr = update_and_get_lr(optimizer, batch_id, epoch_id)
-        #optimizer.zero_grad()
+        optimizer.zero_grad()
         batch_loss, batch_logs = batch_forward(
             policy,
             trajs,
@@ -365,14 +367,14 @@ def train_one_epoch(
                 "lr": curr_lr
             } for log_record in batch_logs
         ]
-        """
+
         batch_loss.backward()
         torch.nn.utils.clip_grad_norm_(
             policy.parameters(),
             get_clip_grad_norm()
         )
         optimizer.step()
-        """
+
         epoch_logs += batch_logs
         epoch_loss += batch_loss.item()        
         pbar.set_description(f"train {epoch_id}: weighted loss {batch_loss.item()}")
@@ -435,7 +437,10 @@ def main(model_repo_folder):
     if from_scratch is True:
         inital_epoch = 0
     else:
-        inital_epoch = train_history["last_epoch"] + 1
+        if '2M' in model_path:
+            inital_epoch = 0
+        else:
+            inital_epoch = train_history["last_epoch"] + 1
     criterion = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.AdamW(
         policy.parameters(), 

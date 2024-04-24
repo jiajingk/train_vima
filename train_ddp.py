@@ -49,7 +49,8 @@ from playground.typing import (
     Action, 
     ForwardMetaData,
     InitalizeMode,
-    ActionAxisWeight
+    ActionAxisWeight,
+    FlattenedStepMeasure
 )
 from playground.util.prompt import get_task_class
 from torch.utils.data import DataLoader
@@ -316,6 +317,18 @@ def get_custom_scaling() -> ActionAxisWeight:
     return weight
 
 
+def apply_rotation_mask(
+        traj_losses: FlattenedStepMeasure, 
+        forward_meta: ForwardMetaData
+    ) -> FlattenedStepMeasure:
+    if forward_meta["is_rotation"]:
+        return traj_losses
+    for attr in traj_losses:
+        if 'rotation' in attr:
+            traj_losses[attr] *= 0
+    return traj_losses
+
+
 def batch_forward(
         policy: VimaPolicyWraper, 
         data: List[NormalizedTraj],
@@ -324,7 +337,7 @@ def batch_forward(
     batch_forward: List[Tuple[PredDist, Action, ForwardMetaData]] = policy(data)
     batch_losses = [
         measure_traj_individual_loss(
-            pred_dist, target_action, forward_meta, criterion
+            pred_dist, target_action, forward_meta, criterion, rotation_mask=True
         ) for pred_dist, target_action, forward_meta in batch_forward
     ]
     axis_weight = get_custom_scaling()
@@ -336,6 +349,10 @@ def batch_forward(
     unweigted_sample_losses = [
         reduce_traj_loss_in_time_axis(traj_loss, lambda _: 1.0)
             for traj_loss in batch_losses
+    ]
+    unweigted_sample_losses = [
+        apply_rotation_mask(traj_loss, forward_meta)
+            for (traj_loss, (_, _, forward_meta)) in zip(unweigted_sample_losses, batch_forward)
     ]
     weighted_sample_losses = [
         reduce_weighted_step_total_loss(
