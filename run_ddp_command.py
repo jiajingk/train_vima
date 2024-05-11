@@ -61,7 +61,7 @@ def get_all_csv_logs(remote_ips: List[IPAddress]) -> None:
             "server_ip": remote_ip,
             "username": "ubuntu"
         }
-        pull_all_files(config, "train_vima", "logs", "*.csv")
+        pull_all_files(config, "train_vima", "logs_2024_05_11", "*.csv")
     
 
 def get_latest_csv_logs(remote_ips: List[IPAddress]) -> None:
@@ -255,13 +255,16 @@ if __name__ == "__main__":
     with open(dotenv_values('.env').get("AWS_IP_PATH")) as f:
         ip_lists = json.load(f)
     #sync_with_git(ip_lists)
-    #get_latest_csv_logs(ip_lists)
+    get_latest_csv_logs(ip_lists)
+    #kill_all_tmux(ip_lists)
+    #clean_parent_weight(ip_lists)
+    #clean_csv_logs(ip_lists)
+    #get_all_csv_logs(ip_lists)
     #name = get_latest_weight(ip_lists)
     #put_latest_weight(ip_lists, f'saved_model\\{name}')
     #sync_with_git(ip_lists)
-    fresh_train(ip_lists)
-    #kill_all_tmux(ip_lists)
+    #fresh_train(ip_lists)
     #files = [ "train_ddp.py", ".env" ]; sync_small_files(ip_lists, files, "train_vima")
-    #launch_train(ip_lists)
-    keep_training_alive(ip_lists, 10)
+    #launch_train(ip_lists, 'ckpt_init')
+    #keep_training_alive(ip_lists, 20)
     #get_all_csv_logs(ip_lists)

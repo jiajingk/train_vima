@@ -190,17 +190,23 @@ def prepare_obs(
         obs: ObsData,
         rgb_dict: Optional[SingleStepViewData] = None,
         meta: EnvMetaInfo,
-        is_train: bool = True
+        is_train: bool = True,
+        use_detected_bbox: bool = False
     ) -> ViewPatchData:
     assert not (rgb_dict is not None and "rgb" in obs)
     rgb_dict = rgb_dict or obs.pop("rgb")
-    
-    segm_dict = get_segm_dict(rgb_dict)
+    if use_detected_bbox:
+        segm_dict = get_segm_dict(rgb_dict)
+    else:
+        segm_dict = obs.pop("segm")
     views: List[View] = sorted(rgb_dict.keys())
     assert meta["n_objects"] == len(meta["obj_id_to_info"])
-    objects = list(set(
-        i for i in np.concatenate( [ np.unique(segm_dict["front"]), np.unique(segm_dict["top"]) ] )
-    ))
+    if use_detected_bbox:
+        objects = list(set(
+            i for i in np.concatenate( [ np.unique(segm_dict["front"]), np.unique(segm_dict["top"]) ] )
+        ))
+    else:
+        objects = list(meta["obj_id_to_info"].keys())
     L_obs = get_batch_size(obs)
     obs_list: ObjList = {
         "ee": obs["ee"],
