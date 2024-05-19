@@ -75,7 +75,7 @@ def measure_avg_rotation_accu(
     unweighted_sample_accu_rotation_cols = [
         str(col) for col in unweighted_sample_accu_cols if 'rotation' in col
     ]
-    df = df[df.loc[df['task'] == 'twist'] | df.loc[df['task'] == 'rotate']]
+    df = df[(df.loc[df['task'] == 'twist']) | (df.loc[df['task'] == 'rotate'])]
     if len(df) == 0:
         measure = {
             "avg_sample_rotation_accu": 0
@@ -170,7 +170,7 @@ def measure_unweighted_rotation_loss(
     unweighted_sample_rotation_rotate_cols = [
         str(col) for col in unweighted_sample_loss_cols if 'rotation' in col
     ]
-    df = df[df.loc[df['task'] == 'twist'] | df.loc[df['task'] == 'rotate']]
+    df = df[(df.loc[df['task'] == 'twist']) | (df.loc[df['task'] == 'rotate'])]
     if len(df) == 0:
         measure = {
             "unweighted_sample_rotation_loss": 0

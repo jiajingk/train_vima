@@ -11,7 +11,6 @@ from playground.util.measure import (
     measure_traj_individual_loss,
 )
 from playground.util.loss_scaling import (
-    get_action_weigts,
     get_task_weights,
     get_default_axis_weight
 )
@@ -31,8 +30,6 @@ from playground.source.tf_record import (
 from playground.util.log import (
     measure_unweighted_loss_per_attribute,
     measure_unweighted_loss_per_task,
-    measure_sample_accu_per_attribute,
-    measure_sample_accu_per_task,
     measure_avg_position_accu,
     measure_avg_rotation_accu,
     measure_avg_unweighted_loss,
@@ -713,7 +710,8 @@ def main_ddp(
             [
                 measure_unweighted_loss_per_task,
                 measure_unweighted_loss_per_attribute,
-                measure_avg_accu,
+                measure_avg_rotation_accu,
+                measure_avg_position_accu,
                 measure_avg_lr,
                 measure_avg_unweighted_loss,
             ],
