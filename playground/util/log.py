@@ -31,11 +31,59 @@ def measure_avg_accu(
         prefix: str = '',
     ) -> TimedLog:
     df = pd.DataFrame(data = records)
-    unweighted_sample_loss_cols = [
+    unweighted_sample_accu_cols = [
         str(col) for col in df.columns if 'sample_accu' in col
     ]
-    measure = df[unweighted_sample_loss_cols].mean().to_dict()
+    measure = {
+        "avg_sample_accu": df[unweighted_sample_accu_cols].sum(axis=1).mean()
+    }
     
+    return {
+        "measure": {prefix + key: value for key, value in measure.items()},
+        "timestamp": time_stamp
+    }
+
+def measure_avg_position_accu(
+        records: List[SampleRecord],
+        time_stamp: Tuple[str, int],
+        prefix: str = '',
+    ) -> TimedLog:
+    df = pd.DataFrame(data = records)
+    unweighted_sample_accu_cols = [
+        str(col) for col in df.columns if 'sample_accu' in col
+    ]
+    unweighted_sample_accu_position_cols = [
+        str(col) for col in unweighted_sample_accu_cols if 'position' in col
+    ]
+    measure = {
+        "avg_sample_position_accu": df[unweighted_sample_accu_position_cols].sum(axis=1).mean()
+    }
+    return {
+        "measure": {prefix + key: value for key, value in measure.items()},
+        "timestamp": time_stamp
+    }
+
+def measure_avg_rotation_accu(
+        records: List[SampleRecord],
+        time_stamp: Tuple[str, int],
+        prefix: str = '',
+    ) -> TimedLog:
+    df = pd.DataFrame(data = records)
+    unweighted_sample_accu_cols = [
+        str(col) for col in df.columns if 'sample_accu' in col
+    ]
+    unweighted_sample_accu_rotation_cols = [
+        str(col) for col in unweighted_sample_accu_cols if 'rotation' in col
+    ]
+    df = df[df.loc[df['task'] == 'twist'] | df.loc[df['task'] == 'rotate']]
+    if len(df) == 0:
+        measure = {
+            "avg_sample_rotation_accu": 0
+        }
+    else:
+        measure = {
+            "avg_sample_rotation_accu": df[unweighted_sample_accu_rotation_cols].sum(axis=1).mean()
+        }
     return {
         "measure": {prefix + key: value for key, value in measure.items()},
         "timestamp": time_stamp

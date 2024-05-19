@@ -32,6 +32,8 @@ from playground.util.log import (
     measure_unweighted_loss_per_attribute,
     measure_unweighted_loss_per_task,
     measure_avg_accu,
+    measure_avg_position_accu,
+    measure_avg_rotation_accu,
     measure_avg_unweighted_loss,
     measure_avg_lr,
     flatten_dict
@@ -495,6 +497,8 @@ def train_one_epoch(
                 measure_unweighted_loss_per_task,
                 measure_unweighted_loss_per_attribute,
                 measure_avg_accu,
+                measure_avg_position_accu,
+                measure_avg_rotation_accu,
                 measure_avg_lr,
                 measure_avg_unweighted_loss,
             ],

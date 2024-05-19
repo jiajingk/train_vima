@@ -108,9 +108,7 @@ def measure_traj_accu(
         forward_meta: ForwardMetaData
     ) -> List[StepMeasure]:
     def criterion(x: Tensor, y: Tensor) -> float:
-        print(x, y)
         if abs(x - y) == 0:
-            print("hit!")
             return 1
         else:
             return 0
