@@ -4,9 +4,11 @@ from playground.util.replay_env import (
 )
 from playground.util.policy import get_policy_and_cfg, VimaPolicyWraper
 from playground.util.train import ( 
-    measure_traj_individual_loss,
-    reduce_weighted_step_total_loss,
     freeze_t5_except_last_2_layer,
+)
+from playground.util.measure import (
+    measure_traj_accu,
+    measure_traj_individual_loss,
 )
 from playground.util.loss_scaling import (
     get_action_weigts,
@@ -14,7 +16,8 @@ from playground.util.loss_scaling import (
     get_default_axis_weight
 )
 from playground.util.reduce import (
-    reduce_traj_loss_in_time_axis
+    reduce_traj_loss_in_time_axis,
+    reduce_weighted_step_total_loss,
 )
 from playground.dataloader import (
     get_dataloader
@@ -28,6 +31,7 @@ from playground.source.tf_record import (
 from playground.util.log import (
     measure_unweighted_loss_per_attribute,
     measure_unweighted_loss_per_task,
+    measure_avg_accu,
     measure_avg_unweighted_loss,
     measure_avg_lr,
     flatten_dict
@@ -76,7 +80,7 @@ import math
 
 def get_wandb_param():
     return {
-        "project": "vima",
+        "project": "test",
         "group": "ddp",
         "job_type": "train"
     }
@@ -101,7 +105,7 @@ def get_optimizer_param() -> OptimizerParam:
 
 def get_dataset_param() -> DatasetParam:
     return  {
-        "data_pct_usage": 1.0,
+        "data_pct_usage": 0.01,
         "total_data_size_per_task": 40000,
         "validation_pct": 0.00,
         "source": "s3://vima",
@@ -334,11 +338,11 @@ def batch_forward(
         data: List[NormalizedTraj],
         criterion: Criterion,
     ) -> Tuple[BatchLoss, List[LogRecord]]:
-    batch_forward: List[Tuple[PredDist, Action, ForwardMetaData]] = policy(data)
+    batch_forward_result: List[Tuple[PredDist, Action, ForwardMetaData]] = policy(data)
     batch_losses = [
         measure_traj_individual_loss(
             pred_dist, target_action, forward_meta, criterion, rotation_mask=True
-        ) for pred_dist, target_action, forward_meta in batch_forward
+        ) for pred_dist, target_action, forward_meta in batch_forward_result
     ]
     axis_weight = get_custom_scaling()
     task_weight = get_task_weights(
@@ -352,7 +356,7 @@ def batch_forward(
     ]
     unweigted_sample_losses = [
         apply_rotation_mask(traj_loss, forward_meta)
-            for (traj_loss, (_, _, forward_meta)) in zip(unweigted_sample_losses, batch_forward)
+            for (traj_loss, (_, _, forward_meta)) in zip(unweigted_sample_losses, batch_forward_result)
     ]
     weighted_sample_losses = [
         reduce_weighted_step_total_loss(
@@ -361,13 +365,24 @@ def batch_forward(
             axis_weight,
             task_weight,
         )
-            for unweigted_sample_loss, (_, _, forward_meta) in zip(unweigted_sample_losses, batch_forward)
+            for unweigted_sample_loss, (_, _, forward_meta) in zip(unweigted_sample_losses, batch_forward_result)
     ]
+    with torch.no_grad():
+        batch_accus = [
+            measure_traj_accu(
+                pred_dist, target_action, forward_meta
+            ) for pred_dist, target_action, forward_meta in batch_forward_result
+        ]
+        sample_accus = [
+            reduce_traj_loss_in_time_axis(traj_accu, lambda _: 1.0)
+                for traj_accu in batch_accus
+        ]
     batch_loss_log = [
         { 
             **flatten_dict(
                 {
                     "unweigted_sample_loss": {k: v.item() for k, v in unweigted_sample_loss.items()},
+                    "sample_accu": {k: v for k, v in sample_accu.items()},
                     "axis_weight": axis_weight,
                     "task_weight": task_weight
                 }
@@ -376,7 +391,8 @@ def batch_forward(
             "task": forward_meta["task"],
             "local_rank": 0 if DDP_PARAM is None else get_ddp_param()["local_rank"]
         }
-            for unweigted_sample_loss, (_, _, forward_meta) in zip(unweigted_sample_losses, batch_forward)
+            for sample_accu, unweigted_sample_loss, (_, _, forward_meta) 
+                in zip(sample_accus, unweigted_sample_losses, batch_forward_result)
     ]
     batch_loss = torch.sum(torch.stack(weighted_sample_losses)) / len(weighted_sample_losses)
     return batch_loss, batch_loss_log
@@ -478,6 +494,7 @@ def train_one_epoch(
             [
                 measure_unweighted_loss_per_task,
                 measure_unweighted_loss_per_attribute,
+                measure_avg_accu,
                 measure_avg_lr,
                 measure_avg_unweighted_loss,
             ],
@@ -692,6 +709,7 @@ def main_ddp(
             [
                 measure_unweighted_loss_per_task,
                 measure_unweighted_loss_per_attribute,
+                measure_avg_accu,
                 measure_avg_lr,
                 measure_avg_unweighted_loss,
             ],
@@ -705,7 +723,7 @@ def main_ddp(
             policy.state_dict(),
             cfg
         )
-        if valid_loader is not None:
+        if (valid_loader is not None) or (get_dataset_param()["validation_pct"] > 0):
             _, valid_logs = validate(
                 policy,
                 valid_loader, 

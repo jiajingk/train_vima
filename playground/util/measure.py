@@ -35,6 +35,8 @@ def get_default_flatten_step_measure(
     }
 
 
+
+
 def measure_step_metrics(
         pred_dist: PredDist,
         target_action: DiscreteAction,
@@ -100,14 +102,18 @@ def measure_traj_metrics(
     return traj_metrics_measure
 
 
-def measure_traj_mode_diff(
+def measure_traj_accu(
         pred_dist: PredDist, 
         target_action: DiscreteAction, 
-        forward_meta: ForwardMetaData,
-        criterion: Optional[Criterion] = None
+        forward_meta: ForwardMetaData
     ) -> List[StepMeasure]:
-    if criterion is None:
-        criterion = lambda x, y: abs(x - y)
+    def criterion(x: Tensor, y: Tensor) -> float:
+        print(x, y)
+        if abs(x - y) == 0:
+            print("hit!")
+            return 1
+        else:
+            return 0
     def extract_mode(  
             pred_dist: PredDist, 
             args: Tuple,

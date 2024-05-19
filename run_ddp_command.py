@@ -230,7 +230,7 @@ def sync_with_git(remote_ips: List[IPAddress]):
 
 def kill_all_tmux(remote_ips: List[IPAddress]):
     tmux_session = "command_execution" 
-    for remote_ip in remote_ips:
+    def kill_tmux_task(remote_ip: IPAddress):
         print(remote_ip)
         config = {
             "pem_file_path": dotenv_values('.env').get("AWS_PEM_PATH"),
@@ -240,6 +240,13 @@ def kill_all_tmux(remote_ips: List[IPAddress]):
         execute(config, f"tmux send-keys -t {tmux_session} C-c; tmux wait-for -S done")
         execute(config, f"tmux wait-for done")
         execute(config, f"tmux kill-session -t {tmux_session}")
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        executor.map(
+            kill_tmux_task, remote_ips
+        )
+        
+        
 
 
 def keep_training_alive(remote_ips: List[IPAddress], epoch: int):
@@ -291,13 +298,13 @@ if __name__ == "__main__":
         ip_lists = json.load(f)
     #sync_with_git(ip_lists)
     #get_latest_csv_logs(ip_lists)
-    #kill_all_tmux(ip_lists)
+    kill_all_tmux(ip_lists)
     #clean_parent_weight(ip_lists)
     #clean_csv_logs(ip_lists)
     #get_all_csv_logs(ip_lists)
     #name = get_latest_weight(ip_lists)
     #put_latest_weight(ip_lists, f'saved_model\\{name}')
-    #sync_with_git(ip_lists)
+    sync_with_git(ip_lists)
     fresh_train(ip_lists)
     #files = [ "train_ddp.py", ".env" ]; sync_small_files(ip_lists, files, "train_vima")
     #launch_train(ip_lists, 'ckpt_init')

@@ -143,12 +143,15 @@ def get_train_valid_data_loader(
     else:
         valid_sampler = None
         shuffle = True
-    valid_loader = DataLoader(
-        valid_dataset, 
-        batch_size=local_batch_size, 
-        sampler=valid_sampler,
-        shuffle=shuffle
-    )
+    if len(valid_dataset_address) == 0:
+        valid_loader = None
+    else:
+        valid_loader = DataLoader(
+            valid_dataset, 
+            batch_size=local_batch_size, 
+            sampler=valid_sampler,
+            shuffle=shuffle
+        )
     return train_loader, valid_loader
 
 

@@ -25,6 +25,22 @@ def flatten_dict(d: Dict[str, Union[str, int, float]], parent_key='', sep='__'):
             items.append((new_key, v))
     return dict(items)
 
+def measure_avg_accu(
+        records: List[SampleRecord],
+        time_stamp: Tuple[str, int],
+        prefix: str = '',
+    ) -> TimedLog:
+    df = pd.DataFrame(data = records)
+    unweighted_sample_loss_cols = [
+        str(col) for col in df.columns if 'sample_accu' in col
+    ]
+    measure = df[unweighted_sample_loss_cols].mean().to_dict()
+    
+    return {
+        "measure": {prefix + key: value for key, value in measure.items()},
+        "timestamp": time_stamp
+    }
+
 def measure_unweighted_loss_per_attribute(
         records: List[SampleRecord],
         time_stamp: Tuple[str, int],
@@ -126,3 +142,4 @@ def measure_avg_unweighted_loss(
         "measure": {prefix + key: value for key, value in measure.items()},
         "timestamp": time_stamp
     }
+

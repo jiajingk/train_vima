@@ -4,10 +4,12 @@ from playground.util.replay_env import (
 )
 from playground.util.policy import get_policy_and_cfg, VimaPolicyWraper
 from playground.util.train import ( 
-    measure_traj_individual_loss,
-    reduce_weighted_step_total_loss,
     freeze_t5_except_last_2_layer,
     generate_run_id,
+)
+from playground.util.measure import (
+    measure_traj_accu,
+    measure_traj_individual_loss,
 )
 from playground.util.loss_scaling import (
     get_action_weigts,
@@ -15,7 +17,8 @@ from playground.util.loss_scaling import (
     calculate_action_weight_factor,
 )
 from playground.util.reduce import (
-    reduce_traj_loss_in_time_axis
+    reduce_traj_loss_in_time_axis,
+    reduce_weighted_step_total_loss,
 )
 from playground.dataloader import (
     get_dataloader
@@ -85,10 +88,10 @@ def get_optimizer_param() -> OptimizerParam:
 
 def get_dataset_param() -> DatasetParam:
     return  {
-        "data_pct_usage": 0.8,
-        "total_data_size_per_task": 40000,
-        "validation_pct": 0.01,
-        "source": "s3://vima",
+        "data_pct_usage": 0.75,
+        "total_data_size_per_task": 4,
+        "validation_pct": 0.25,
+        "source": "local",
         "tasks": [
             'follow_order',
             'manipulate_old_neighbor',
@@ -108,7 +111,7 @@ def get_dataset_param() -> DatasetParam:
 
 def get_train_param() -> TrainParam:
     return {
-        "total_epoch": 1,
+        "total_epoch": 50,
         "local_batch_size": 16,
         "distributed": False,
         "model_size": '2M'
@@ -257,8 +260,6 @@ def batch_forward(
         reduce_traj_loss_in_time_axis(traj_loss, lambda _: 1.0)
             for traj_loss in batch_losses
     ]
-    for unweigted_sample_loss in unweigted_sample_losses:
-        print(unweigted_sample_loss)
     weighted_sample_losses = [
         reduce_weighted_step_total_loss(
             unweigted_sample_loss, 
@@ -269,11 +270,22 @@ def batch_forward(
             for unweigted_sample_loss, (_, _, forward_meta) 
                 in zip(unweigted_sample_losses, batch_forward_result)
     ]
+    with torch.no_grad():
+        batch_accus = [
+            measure_traj_accu(
+                pred_dist, target_action, forward_meta
+            ) for pred_dist, target_action, forward_meta in batch_forward_result
+        ]
+        sample_accus = [
+            reduce_traj_loss_in_time_axis(traj_accu, lambda _: 1.0)
+                for traj_accu in batch_accus
+        ]
     batch_loss_log = [
         { 
             **flatten_dict(
                 {
                     "unweigted_sample_loss": {k: v.item() for k, v in unweigted_sample_loss.items()},
+                    "sample_accu": {k: v for k, v in sample_accu.items()},
                     "axis_weight": axis_weight,
                     "task_weight": task_weight
                 }
@@ -281,8 +293,8 @@ def batch_forward(
             "task": get_task_class(forward_meta['prompt']),
             "local_rank": 0 if DDP_PARAM is None else get_ddp_param()["local_rank"]
         }
-            for unweigted_sample_loss, (_, _, forward_meta) 
-                in zip(unweigted_sample_losses, batch_forward_result)
+            for sample_accu, unweigted_sample_loss, (_, _, forward_meta) 
+                in zip(sample_accus, unweigted_sample_losses, batch_forward_result)
     ]
     batch_loss = torch.sum(
         torch.stack(weighted_sample_losses)
