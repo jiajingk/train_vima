@@ -56,7 +56,7 @@ def measure_avg_position_accu(
         str(col) for col in unweighted_sample_accu_cols if 'position' in col
     ]
     measure = {
-        "avg_sample_position_accu": df[unweighted_sample_accu_position_cols].sum(axis=1).mean()
+        "avg_sample_position_accu": df[unweighted_sample_accu_position_cols].mean(axis=1).mean()
     }
     return {
         "measure": {prefix + key: value for key, value in measure.items()},
@@ -82,7 +82,7 @@ def measure_avg_rotation_accu(
         }
     else:
         measure = {
-            "avg_sample_rotation_accu": df[unweighted_sample_accu_rotation_cols].sum(axis=1).mean()
+            "avg_sample_rotation_accu": df[unweighted_sample_accu_rotation_cols].mean(axis=1).mean()
         }
     return {
         "measure": {prefix + key: value for key, value in measure.items()},
@@ -151,7 +151,7 @@ def measure_unweighted_position_loss(
         str(col) for col in unweighted_sample_loss_cols if 'position' in col
     ]
     measure = {
-        "unweighted_sample_position_loss": df[unweighted_sample_position_loss_cols].sum(axis=1).mean()
+        "unweighted_sample_position_loss": df[unweighted_sample_position_loss_cols].mean(axis=1).mean()
     }
     return {
         "measure": {prefix + key: value for key, value in measure.items()},
@@ -177,7 +177,7 @@ def measure_unweighted_rotation_loss(
         }
     else:
         measure = {
-            "unweighted_sample_rotation_loss": df[unweighted_sample_rotation_rotate_cols].sum(axis=1).mean()
+            "unweighted_sample_rotation_loss": df[unweighted_sample_rotation_rotate_cols].mean(axis=1).mean()
         }
     return {
         "measure": {prefix + key: value for key, value in measure.items()},
