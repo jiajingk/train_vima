@@ -139,12 +139,10 @@ def measure_unweighted_loss_per_attribute(
     ]
     position_measure = df[position_cols].mean().to_dict()
     rotation_df = df.loc[ (df['task'] == 'twist') | (df['task'] == 'rotate') ]
-    if len(rotation_df) == 0:
-        rotation_measure = {
-           key:0 for key in rotation_cols
-        }
-    else:
+    if len(rotation_df) > 0:
         rotation_measure = df[rotation_cols].mean().to_dict()
+    else:
+        rotation_measure = {}
     
     measure = {
         **position_measure,
