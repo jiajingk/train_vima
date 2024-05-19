@@ -193,7 +193,7 @@ def measure_unweighted_loss_per_task(
     unweighted_sample_loss_cols = [
         str(col) for col in df.columns if 'unweigted_sample_loss' in col
     ]
-    measure = df[unweighted_sample_loss_cols + ["task"]].groupby("task").sum().mean(axis=1).to_dict()
+    measure = df[unweighted_sample_loss_cols + ["task"]].groupby("task").mean().mean(axis=1).to_dict()
     return {
         "measure": {prefix + key: value for key, value in measure.items()},
         "timestamp": time_stamp
