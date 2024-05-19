@@ -11,13 +11,15 @@ from remote_control.util import (
     pull_all_files, 
     send_large_file_to_server, 
 )
-from typing import List
+from typing import List, Tuple
 from playground.typing import InitalizeMode
+from concurrent.futures import ThreadPoolExecutor
+
 
 IPAddress = str
 
 def clean_csv_logs(remote_ips: List[IPAddress]):
-    for remote_ip in remote_ips:
+    def clean_csv_logs_task(remote_ip: IPAddress):
         config = {
             "pem_file_path": dotenv_values('.env').get("AWS_PEM_PATH"),
             "server_ip": remote_ip,
@@ -26,10 +28,14 @@ def clean_csv_logs(remote_ips: List[IPAddress]):
         execute(
             config,
             'rm train_vima/*.csv'
-        )
+        )        
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        executor.map(
+            clean_csv_logs_task, remote_ips
+        )    
 
 def clean_parent_weight(remote_ips: List[IPAddress]):
-    for remote_ip in remote_ips:
+    def clean_parent_weight_task(remote_ip: IPAddress):
         config = {
             "pem_file_path": dotenv_values('.env').get("AWS_PEM_PATH"),
             "server_ip": remote_ip,
@@ -39,6 +45,12 @@ def clean_parent_weight(remote_ips: List[IPAddress]):
             config,
             'rm parent_model/*.ckpt'
         )
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        executor.map(
+            clean_parent_weight_task, remote_ips
+        )    
+    
+        
 
 def put_latest_weight(remote_ips: List[IPAddress], path):
     for remote_ip in remote_ips:
@@ -54,25 +66,31 @@ def put_latest_weight(remote_ips: List[IPAddress], path):
         )
 
 def get_all_csv_logs(remote_ips: List[IPAddress]) -> None:
-    remote_ips: List[IPAddress]
-    for remote_ip in remote_ips:
+    def get_all_csv_logs_tasks(remote_ip: remote_ips):
         config = {
             "pem_file_path": dotenv_values('.env').get("AWS_PEM_PATH"),
             "server_ip": remote_ip,
             "username": "ubuntu"
         }
-        pull_all_files(config, "train_vima", "logs_2024_05_11", "*.csv")
+        pull_all_files(config, "train_vima", "logs", "*.csv")
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        executor.map(
+            get_all_csv_logs_tasks, remote_ips
+        )    
     
 
 def get_latest_csv_logs(remote_ips: List[IPAddress]) -> None:
-    remote_ips: List[IPAddress]
-    for remote_ip in remote_ips:
+    def get_latest_csv_logs_task(remote_ip: remote_ips):
         config = {
             "pem_file_path": dotenv_values('.env').get("AWS_PEM_PATH"),
             "server_ip": remote_ip,
             "username": "ubuntu"
         }
-        pull_latest_file(config, "train_vima", "logs", "*.csv")
+        pull_latest_file(config, "train_vima", "logs", "eval_*.csv")
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        executor.map(
+            get_latest_csv_logs_task, remote_ips
+        )    
 
 def get_latest_weight(remote_ips: List[IPAddress]) -> str:
     master_ip = remote_ips[0]
@@ -116,7 +134,7 @@ def sync_small_files(
         file_paths: List[str],
         dst_folder: str
     ):
-    for remote_ip in remote_ips:
+    def sync_small_files_task(remote_ip: IPAddress):
         for file_path in file_paths: 
             send_small_file_to_server(
                 {
@@ -127,6 +145,12 @@ def sync_small_files(
                 file_path,
                 dst_folder
             )
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        executor.map(
+            sync_small_files_task, remote_ips
+        )
+        
+            
 
 
 def launch_eval(remote_ips: List[IPAddress]):
@@ -153,8 +177,8 @@ def launch_train(remote_ips: List[IPAddress], mode: InitalizeMode):
     wandb_api_key = dotenv_values('.env').get("WANDB_API_KEY")
     ddp_master_ip = dotenv_values('.env').get("DDP_MASTER_IP")
     ddp_master_port = dotenv_values('.env').get("DDP_MASTER_PORT")
-    for i, remote_ip in enumerate(remote_ips):
-        print(f"in machine: {remote_ip}")
+    def launch_train_task(launch_config: Tuple[int, IPAddress]):
+        i, remote_ip = launch_config
         commands = [
             "cd train_vima",
             f"export WANDB_API_KEY={wandb_api_key}",
@@ -170,6 +194,13 @@ def launch_train(remote_ips: List[IPAddress], mode: InitalizeMode):
             "username": "ubuntu"
         }, 'venv')
 
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        executor.map(
+            launch_train_task, zip(range(len(remote_ips)), remote_ips)
+        )  
+
+        
+
 def sync_with_git(remote_ips: List[IPAddress]):
     commands = [
         "cd ~",
@@ -179,12 +210,16 @@ def sync_with_git(remote_ips: List[IPAddress]):
         "wget https://huggingface.co/VIMA/VIMA/resolve/main/2M.ckpt",
         "wget https://huggingface.co/VIMA/VIMA/resolve/main/mask_rcnn.pth",
     ]
-    for remote_ip in remote_ips:
+    def sync_with_git_task(remote_ip: IPAddress):
         remote_execute_under_py_venv(commands, {
             "pem_file_path": dotenv_values('.env').get("AWS_PEM_PATH"),
             "server_ip": remote_ip,
             "username": "ubuntu"
         }, 'venv', accept_duplicate=False, exit_on_finish=True)
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        executor.map(
+            sync_with_git_task, remote_ips
+        )
     files = [
         "train_ddp.py",
         ".env",
@@ -255,7 +290,7 @@ if __name__ == "__main__":
     with open(dotenv_values('.env').get("AWS_IP_PATH")) as f:
         ip_lists = json.load(f)
     #sync_with_git(ip_lists)
-    get_latest_csv_logs(ip_lists)
+    #get_latest_csv_logs(ip_lists)
     #kill_all_tmux(ip_lists)
     #clean_parent_weight(ip_lists)
     #clean_csv_logs(ip_lists)
@@ -263,8 +298,8 @@ if __name__ == "__main__":
     #name = get_latest_weight(ip_lists)
     #put_latest_weight(ip_lists, f'saved_model\\{name}')
     #sync_with_git(ip_lists)
-    #fresh_train(ip_lists)
+    fresh_train(ip_lists)
     #files = [ "train_ddp.py", ".env" ]; sync_small_files(ip_lists, files, "train_vima")
     #launch_train(ip_lists, 'ckpt_init')
-    #keep_training_alive(ip_lists, 20)
+    #keep_training_alive(ip_lists, 50)
     #get_all_csv_logs(ip_lists)

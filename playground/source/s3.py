@@ -58,7 +58,7 @@ def prepare_task_id(
     train_size = (train_end - train_start)
     valid_start = train_end
     valid_end = valid_start + int(validation_pct * train_size)
-    assert valid_end < total_data_size_per_task
+    assert valid_end <= total_data_size_per_task
     valid_task_id = [
         i for i in range(valid_start,  valid_end)
     ]

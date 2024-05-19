@@ -84,9 +84,9 @@ def get_wandb_param():
 def get_lr_param() -> CosAnnealingParam:
     return {
         "warmup_end_at_iters": 7000,
-        "flatten_end_at_iters": 7000,
-        "lr_decay_end_at_iters": 24000,
-        "learning_rate": 1e-5,
+        "flatten_end_at_iters": 240000,
+        "lr_decay_end_at_iters": 960000,
+        "learning_rate": 1e-4,
         "min_lr": 1e-7, 
     }
 
@@ -101,9 +101,9 @@ def get_optimizer_param() -> OptimizerParam:
 
 def get_dataset_param() -> DatasetParam:
     return  {
-        "data_pct_usage": 0.60,
+        "data_pct_usage": 1.0,
         "total_data_size_per_task": 40000,
-        "validation_pct": 0.01,
+        "validation_pct": 0.00,
         "source": "s3://vima",
         "tasks": [
             "follow_order",
@@ -126,7 +126,7 @@ def get_dataset_param() -> DatasetParam:
 def get_train_param() -> TrainParam:
     return {
         "model_size": "2M",
-        "total_epoch": 10,
+        "total_epoch": 50,
         "local_batch_size": 16,
         "distributed": True,
     }

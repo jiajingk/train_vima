@@ -77,6 +77,8 @@ def pull_all_files(
     for line in output.strip().split('\n'):
         location = line.split(' ')[-1].strip()
         file_name = location.split('/')[-1].strip()
+        if os.path.exists(f"{dst_folder}/{file_name}"):
+            continue
         receive_large_file_to_server(ssh_config, location, f"{dst_folder}/{file_name}")
         downloaded_files.append(file_name)
     return downloaded_files
