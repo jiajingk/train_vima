@@ -131,8 +131,25 @@ def measure_unweighted_loss_per_attribute(
     unweighted_sample_loss_cols = [
         str(col) for col in df.columns if 'unweigted_sample_loss' in col
     ]
-    measure = df[unweighted_sample_loss_cols].mean().to_dict()
+    position_cols = [
+        str(col) for col in unweighted_sample_loss_cols if 'position' in col
+    ]
+    rotation_cols = [
+        str(col) for col in unweighted_sample_loss_cols if 'rotation' in col
+    ]
+    position_measure = df[position_cols].mean().to_dict()
+    rotation_df = df.loc[ (df['task'] == 'twist') | (df['task'] == 'rotate') ]
+    if len(rotation_df) == 0:
+        rotation_measure = {
+           key:0 for key in rotation_cols
+        }
+    else:
+        rotation_measure = df[rotation_cols].mean().to_dict()
     
+    measure = {
+        **position_measure,
+        **rotation_measure
+    }
     return {
         "measure": {prefix + key: value for key, value in measure.items()},
         "timestamp": time_stamp
