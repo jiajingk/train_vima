@@ -89,6 +89,39 @@ def measure_avg_rotation_accu(
         "timestamp": time_stamp
     }
 
+def measure_sample_accu_per_attribute(
+        records: List[SampleRecord],
+        time_stamp: Tuple[str, int],
+        prefix: str = '',
+    ) -> TimedLog:
+    df = pd.DataFrame(data = records)
+    unweighted_sample_loss_cols = [
+        str(col) for col in df.columns if 'sample_accu' in col
+    ]
+    measure = df[unweighted_sample_loss_cols].mean().to_dict()
+    
+    return {
+        "measure": {prefix + key: value for key, value in measure.items()},
+        "timestamp": time_stamp
+    }
+
+
+def measure_sample_accu_per_task(
+        records: List[SampleRecord],
+        time_stamp: Tuple[str, int],
+        prefix: str = '',
+    ) -> TimedLog:
+    df = pd.DataFrame(data = records)
+    unweighted_sample_loss_cols = [
+        str(col) for col in df.columns if 'sample_accu' in col
+    ]
+    measure = df[unweighted_sample_loss_cols + ["task"]].groupby("task").sum().mean(axis=1).to_dict()
+    return {
+        "measure": {prefix + key: value for key, value in measure.items()},
+        "timestamp": time_stamp
+    }
+
+
 def measure_unweighted_loss_per_attribute(
         records: List[SampleRecord],
         time_stamp: Tuple[str, int],
@@ -105,6 +138,51 @@ def measure_unweighted_loss_per_attribute(
         "timestamp": time_stamp
     }
 
+def measure_unweighted_position_loss(
+        records: List[SampleRecord],
+        time_stamp: Tuple[str, int],
+        prefix: str = '',
+    ) -> TimedLog:
+    df = pd.DataFrame(data = records)
+    unweighted_sample_loss_cols = [
+        str(col) for col in df.columns if 'unweigted_sample_loss' in col
+    ]
+    unweighted_sample_position_loss_cols = [
+        str(col) for col in unweighted_sample_loss_cols if 'position' in col
+    ]
+    measure = {
+        "unweighted_sample_position_loss": df[unweighted_sample_position_loss_cols].sum(axis=1).mean()
+    }
+    return {
+        "measure": {prefix + key: value for key, value in measure.items()},
+        "timestamp": time_stamp
+    }
+
+def measure_unweighted_rotation_loss(
+        records: List[SampleRecord],
+        time_stamp: Tuple[str, int],
+        prefix: str = '',
+    ) -> TimedLog:
+    df = pd.DataFrame(data = records)
+    unweighted_sample_loss_cols = [
+        str(col) for col in df.columns if 'unweigted_sample_loss' in col
+    ]
+    unweighted_sample_rotation_rotate_cols = [
+        str(col) for col in unweighted_sample_loss_cols if 'rotation' in col
+    ]
+    df = df[df.loc[df['task'] == 'twist'] | df.loc[df['task'] == 'rotate']]
+    if len(df) == 0:
+        measure = {
+            "unweighted_sample_rotation_loss": 0
+        }
+    else:
+        measure = {
+            "unweighted_sample_rotation_loss": df[unweighted_sample_rotation_rotate_cols].sum(axis=1).mean()
+        }
+    return {
+        "measure": {prefix + key: value for key, value in measure.items()},
+        "timestamp": time_stamp
+    }
 
 def measure_unweighted_loss_per_task(
         records: List[SampleRecord],

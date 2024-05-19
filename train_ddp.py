@@ -31,7 +31,8 @@ from playground.source.tf_record import (
 from playground.util.log import (
     measure_unweighted_loss_per_attribute,
     measure_unweighted_loss_per_task,
-    measure_avg_accu,
+    measure_sample_accu_per_attribute,
+    measure_sample_accu_per_task,
     measure_avg_position_accu,
     measure_avg_rotation_accu,
     measure_avg_unweighted_loss,
@@ -496,7 +497,6 @@ def train_one_epoch(
             [
                 measure_unweighted_loss_per_task,
                 measure_unweighted_loss_per_attribute,
-                measure_avg_accu,
                 measure_avg_position_accu,
                 measure_avg_rotation_accu,
                 measure_avg_lr,
