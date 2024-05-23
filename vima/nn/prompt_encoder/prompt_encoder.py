@@ -5,6 +5,7 @@ import copy
 
 import torch
 import torch.nn as nn
+import os
 from transformers.models.t5.modeling_t5 import (
     T5Attention as _T5Attention,
     T5LayerNorm,
@@ -22,8 +23,12 @@ from transformers.models.t5.modeling_t5 import (
 class T5PromptEncoder(nn.Module):
     def __init__(self):
         super().__init__()
+        if not os.path.exists(os.path.join('.', 't5_pretrained')):
+            self.t5 = T5EncoderModel.from_pretrained("t5-base")
+            self.t5.save_pretrained(os.path.join('.', 't5_pretrained'))
+        else:
+            self.t5 = T5EncoderModel.from_pretrained(os.path.join('.', 't5_pretrained'))
 
-        self.t5 = T5EncoderModel.from_pretrained("t5-base")
         self.output_dim = self.t5.config.d_model
         self.input_dim = self.t5.config.d_model
 

@@ -80,7 +80,7 @@ import math
 
 def get_wandb_param():
     return {
-        "project": "test",
+        "project": "vima",
         "group": "ddp",
         "job_type": "train"
     }
@@ -105,7 +105,7 @@ def get_optimizer_param() -> OptimizerParam:
 
 def get_dataset_param() -> DatasetParam:
     return  {
-        "data_pct_usage": 0.01,
+        "data_pct_usage": 1.0,
         "total_data_size_per_task": 40000,
         "validation_pct": 0.00,
         "source": "s3://vima",

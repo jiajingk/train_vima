@@ -17,6 +17,7 @@ from playground.typing import (
     TaskInfo,
     Action
 )
+from playground.util.action import bound_action_to_bin_action
 from playground.util.measure import to_flatten_step_measure
 from playground.util.log import flatten_dict
 from playground.util.policy import create_policy_from_ckpt
@@ -85,6 +86,7 @@ def main(model_path: str, task: TaskName, count: int):
     oracle_agent = env.task.oracle(env)
     for i in range(count):
         env.seed(i)
+        
         obs = env.reset()
         history = None
         while True:
@@ -163,6 +165,27 @@ def write_log_to_csv(logs: List[EvalRecord], run_id: str, log_type: str):
     else:
         log_df.to_csv(log_file_path, mode='a', header=False, index=False)
 
+
+class ActionAccu(TypedDict):
+    pose0_position: Tuple[int, int]
+    pose0_rotation: Tuple[int, int, int, int]
+    pose1_position: Tuple[int, int]
+    pose1_rotation: Tuple[int, int, int, int]
+
+def per_attr_accu(oracle_action: Action, policy_action: Action) -> ActionAccu:
+    for attr in ('pose0_position', 'pose0_rotation', 'pose1_position', 'pose1_rotation'):
+        for i, (oracle, policy) in enumerate(zip(oracle_action[attr], policy_action[attr])):
+            print(attr, i, int(oracle), int(policy))
+
+
+def to_tensor_action(action: Action) -> Action:
+    return {
+        "pose0_position": torch.Tensor(action["pose0_position"].copy()),
+        "pose1_position": torch.Tensor(action["pose1_position"].copy()),
+        "pose0_rotation": torch.Tensor(action["pose0_rotation"].copy()),
+        "pose1_rotation": torch.Tensor(action["pose1_rotation"].copy()),
+    }
+
 @torch.no_grad()
 def eval_placement_generalization(model_path: str, task: TaskName, num_exp: int):
     today = datetime.today().strftime('%Y-%m-%d')
@@ -220,7 +243,19 @@ def eval_placement_generalization(model_path: str, task: TaskName, num_exp: int)
                     "pose0_rotation": [None, None, None, None],
                     "pose1_rotation": [None, None, None, None],
                 }
-            eval_record["action_trace"].append((oracle_action, policy_action))
+                eval_record["action_trace"].append(
+                    (
+                        oracle_action, 
+                        policy.discretize_action(to_tensor_action(policy_action))
+                    )
+                )
+            else:
+                eval_record["action_trace"].append(
+                    (
+                        policy.discretize_action(to_tensor_action(oracle_action)),
+                        policy.discretize_action(to_tensor_action(policy_action))
+                    )
+                )
             obs, _, done, info = env.step(policy_action)
             eval_record["step_count"] += 1
             info: TaskInfo
@@ -246,7 +281,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_path", type=str, default="2M.ckpt")
     parser.add_argument("--task", type=str, default="visual_manipulation")
-    parser.add_argument("--num_exp", type=int, default=50)
+    parser.add_argument("--num_exp", type=int, default=100)
     task_param = parser.parse_args()
     eval_placement_generalization(task_param.model_path, task_param.task, task_param.num_exp)
     #main(task_param.model_path, task_param.task, task_param.num_exp)
