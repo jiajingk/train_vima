@@ -157,8 +157,8 @@ def fill_traces(eval_records: List[EvalRecord]) -> List[FlattenedEvalRecord]:
     ]
     
 
-def write_log_to_csv(logs: List[EvalRecord], run_id: str, log_type: str):
-    log_file_path = f"{log_type}_{run_id}.csv"
+def write_log_to_csv(logs: List[EvalRecord], run_id: str, log_type: str, save_folder: str = '.'):
+    log_file_path = os.path.join(save_folder,  f"{log_type}_{run_id}.csv")
     log_df = pd.DataFrame(data=map(flatten_dict, fill_traces(logs)))
     if not os.path.exists(log_file_path):
         log_df.to_csv(log_file_path, index=False)
@@ -187,8 +187,7 @@ def to_tensor_action(action: Action) -> Action:
     }
 
 @torch.no_grad()
-def eval_placement_generalization(model_path: str, task: TaskName, num_exp: int):
-    today = datetime.today().strftime('%Y-%m-%d')
+def eval_placement_generalization(model_path: str, task: TaskName, num_exp: int, save_folder: str):
     run_config = RunConfig(
         partition="placement_generalization",
         task=task,
@@ -268,7 +267,7 @@ def eval_placement_generalization(model_path: str, task: TaskName, num_exp: int)
                 eval_record["timeout"] = int(False)
             if done:
                 break
-        write_log_to_csv([eval_record], today, f'eval_{model_name}')
+        write_log_to_csv([eval_record], 'run', f'eval_{model_name}', save_folder)
         if (eval_record["failure"] == 0 
             and eval_record["sucess"] == 0
             and eval_record["timeout"] == 0):
@@ -282,6 +281,12 @@ if __name__ == "__main__":
     parser.add_argument("--model_path", type=str, default="2M.ckpt")
     parser.add_argument("--task", type=str, default="visual_manipulation")
     parser.add_argument("--num_exp", type=int, default=100)
+    parser.add_argument("--save", type=str, default='.')
     task_param = parser.parse_args()
-    eval_placement_generalization(task_param.model_path, task_param.task, task_param.num_exp)
+    eval_placement_generalization(
+        task_param.model_path, 
+        task_param.task, 
+        task_param.num_exp,
+        task_param.save
+    )
     #main(task_param.model_path, task_param.task, task_param.num_exp)

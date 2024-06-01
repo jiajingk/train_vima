@@ -48,7 +48,7 @@ def execute_multi_line(config: SSHConfig, commands: List[str]):
     execute(config, ';'.join(commands))
 
 
-def receive_large_file_to_server(
+def receive_large_file_from_server(
         ssh_config: SSHConfig, 
         src_file_path: str, 
         dst_file_path: str
@@ -79,10 +79,41 @@ def pull_all_files(
         file_name = location.split('/')[-1].strip()
         if os.path.exists(f"{dst_folder}/{file_name}"):
             continue
-        receive_large_file_to_server(ssh_config, location, f"{dst_folder}/{file_name}")
+        receive_large_file_from_server(ssh_config, location, f"{dst_folder}/{file_name}")
         downloaded_files.append(file_name)
     return downloaded_files
 
+def stream_all_files(
+        ssh_config: SSHConfig, 
+        src_folder: str, 
+        dst_folder: str,
+        glob_pattern: str
+    ) -> Iterator[str]:
+    command = f'find {src_folder} -name "{glob_pattern}" -ls -printf "%T@ %Tc %p\n" | sort -n'
+    output, err = execute(ssh_config, command)
+    assert len(err) == 0, err
+    for line in output.strip().split('\n'):
+        location = line.split(' ')[-1].strip()
+        file_name = location.split('/')[-1].strip()
+        if os.path.exists(f"{dst_folder}/{file_name}"):
+            continue
+        receive_large_file_from_server(ssh_config, location, f"{dst_folder}/{file_name}")
+        yield file_name
+
+
+def list_all_files(
+        ssh_config: SSHConfig, 
+        src_folder: str, 
+        glob_pattern: str
+    ) -> List[str]:
+    command = f'find {src_folder} -name "{glob_pattern}" -ls -printf "%T@ %Tc %p\n" | sort -n'
+    output, err = execute(ssh_config, command)
+    assert len(err) == 0, err
+    locations = []
+    for line in output.strip().split('\n'):
+        location = line.split(' ')[-1].strip()
+        locations.append(location)
+    return locations
 
 def pull_latest_file(
         ssh_config: SSHConfig, 
@@ -98,7 +129,7 @@ def pull_latest_file(
     last_location = last_line.split(' ')[-1].strip()
     file_name = last_location.split('/')[-1].strip()
     print(last_location)
-    receive_large_file_to_server(ssh_config, last_location, f"{dst_folder}/{file_name}")
+    receive_large_file_from_server(ssh_config, last_location, f"{dst_folder}/{file_name}")
     return file_name
 
 
@@ -114,7 +145,7 @@ def pull_latest_weight(
     model_name = last_location.split('/')[-1].strip()
     print(model_name)
     print(last_location)
-    receive_large_file_to_server(ssh_config, last_location, f"{dst_folder}/{model_name}")
+    receive_large_file_from_server(ssh_config, last_location, f"{dst_folder}/{model_name}")
     return model_name
 
 
