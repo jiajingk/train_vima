@@ -40,11 +40,10 @@ def reduce_weighted_step_total_loss(
         task_weights: TaskWeight
     ) -> Tensor:
     step_loss = 0.0
-    task = get_task_class(forward_meta["prompt"])
-    if task not in task_weights:
+    if forward_meta['task'] not in task_weights:
         task_weight = 1.0
     else:
-        task_weight = task_weights[task]
+        task_weight = task_weights[forward_meta['task']]
     for dim_name, loss in traj_imitation_loss.items():
         step_loss = step_loss + axis_weights[dim_name] * loss
     return step_loss * task_weight

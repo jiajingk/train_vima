@@ -90,7 +90,7 @@ def get_lr_param() -> CosAnnealingParam:
         "warmup_end_at_iters": 7000,
         "flatten_end_at_iters": 24000000,
         "lr_decay_end_at_iters": 96000000,
-        "learning_rate": 1e-6,
+        "learning_rate": 1e-5,
         "min_lr": 1e-7, 
     }
 
@@ -350,6 +350,7 @@ def batch_forward(
         None,
         "default"
     )
+    task_weight["pick_in_order_then_restore"] = 5.0
     unweigted_sample_losses = [
         reduce_traj_loss_in_time_axis(traj_loss, lambda _: 1.0)
             for traj_loss in batch_losses
