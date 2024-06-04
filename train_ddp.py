@@ -56,7 +56,6 @@ from playground.typing import (
     ActionAxisWeight,
     FlattenedStepMeasure
 )
-from playground.util.prompt import get_task_class
 from torch.utils.data import DataLoader
 from torch.nn.parallel import DistributedDataParallel as DDP
 from tqdm import tqdm
@@ -123,7 +122,22 @@ def get_dataset_param() -> DatasetParam:
             "simple_manipulation",
             "sweep_without_exceeding",
             "twist",
-        ]
+        ],
+        "task_frequency": {
+            "follow_order":  10 / 13 / 12,
+            "manipulate_old_neighbor": 10 / 13 / 12,
+            "novel_adj":  10 / 13 / 12,
+            "novel_noun":  10 / 13 / 12,
+            "pick_in_order_then_restore":  3 / 13,
+            "rearrange_then_restore":  10 / 13 / 12,
+            "rearrange":  10 / 13 / 12,
+            "rotate":  10 / 13 / 12,
+            "same_profile":  10 / 13 / 12,
+            "scene_understanding":  10 / 13 / 12,
+            "simple_manipulation":  10 / 13 / 12,
+            "sweep_without_exceeding":  10 / 13 / 12,
+            "twist":  10 / 13 / 12,
+        }
     }
 
 
@@ -350,7 +364,6 @@ def batch_forward(
         None,
         "default"
     )
-    task_weight["pick_in_order_then_restore"] = 5.0
     unweigted_sample_losses = [
         reduce_traj_loss_in_time_axis(traj_loss, lambda _: 1.0)
             for traj_loss in batch_losses

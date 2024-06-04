@@ -18,11 +18,13 @@ from typing import (
     Optional,
     List,
     Any,
-    Iterator
+    Iterator,
+    Dict
 )
 from playground.typing import (
     TrainParam,
     DatasetParam,
+    Tensor,
     TaskName
 )
 
@@ -73,7 +75,7 @@ def get_records_addr(
     ) -> Tuple[List[str], List[str]]:
     if tasks is None:
         task_used = [
-            'visual_manipulation',
+            'simple_manipulation',
             'manipulate_old_neighbor',
             'novel_adj',
             'novel_noun',
@@ -109,13 +111,52 @@ def get_records_addr(
     return train_records, valid_records
 
 
+
+class WeightedDistributedSampler(DistributedSampler):
+    def __init__(self, dataset, weights, num_replicas=None, rank=None, replacement=True):
+        super(WeightedDistributedSampler, self).__init__(dataset, num_replicas, rank)
+        self.weights = weights
+        self.replacement = replacement
+
+    def __iter__(self):
+        g = torch.Generator()
+        g.manual_seed(self.epoch)
+        indices = torch.multinomial(
+            self.weights, 
+            len(self.dataset), 
+            self.replacement,
+            generator=g
+        ).tolist()
+        indices += indices[:(self.total_size - len(indices))]
+        assert len(indices) == self.total_size
+        indices = indices[self.rank:self.total_size:self.num_replicas]
+        assert len(indices) == self.num_samples
+        return iter(indices)
+
+    def __len__(self):
+        return self.num_samples
+
+
+def get_per_record_weight(
+        train_dataset: RecordDataset, 
+        task_frequency: Dict[TaskName, float]
+    ) -> Tensor:
+    weights = torch.ones(len(train_dataset))
+    for task, freq in task_frequency.items():
+        mask = [task in record for record in train_dataset.records]
+        weights[mask] = freq
+    return weights
+
+
+
 def get_train_valid_data_loader(
         data_pct_usage: float,
         validation_pct: float,
         total_data_size_per_task: int,
         local_batch_size: int,
         distributed: bool = False,
-        tasks: Optional[List[TaskName]] = None 
+        tasks: Optional[List[TaskName]] = None,
+        task_frequency: Dict[TaskName, float] = None, 
     ) -> Tuple[DataLoader, DataLoader]:
     train_dataset_address, valid_dataset_address = get_records_addr(
         data_pct_usage = data_pct_usage,
@@ -126,7 +167,11 @@ def get_train_valid_data_loader(
     train_dataset = RecordDataset(train_dataset_address)
     valid_dataset = RecordDataset(valid_dataset_address)
     if distributed:
-        train_sampler = DistributedSampler(train_dataset)
+        if task_frequency is None:
+            train_sampler = DistributedSampler(train_dataset)
+        else:
+            weights = get_per_record_weight(train_dataset, task_frequency)
+            train_sampler = WeightedDistributedSampler(train_dataset, weights)
         shuffle = False
     else:
         train_sampler = None
@@ -165,7 +210,8 @@ def get_s3_dataloader(
         dataset_param['total_data_size_per_task'],
         train_param['local_batch_size'],
         train_param['distributed'],
-        dataset_param['tasks']
+        dataset_param['tasks'],
+        dataset_param['task_frequency'],
     )
 
 def extract_s3_info(s3_url: str) -> Tuple[str, str]:

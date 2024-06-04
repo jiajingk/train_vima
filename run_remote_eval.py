@@ -11,7 +11,8 @@ from remote_control.util import (
     list_all_files, 
     receive_large_file_from_server, 
     send_large_file_to_server,
-    pull_latest_file
+    pull_latest_file,
+    execute
 )
 from remote_control.exec import remote_execute_under_py_venv, direct_remote_execute
 IPAddress = str
@@ -124,6 +125,10 @@ def sync_model_to_eval(model_name: str, dst_ip: IPAddress):
         "server_ip": dst_ip,
         "username": "ubuntu"
     }
+    execute(
+        dst_config,
+        'rm remote_eval/model/*.ckpt'
+    )
     receive_large_file_from_server(
         src_config,
         f'saved_model/{model_name}.ckpt',

@@ -173,3 +173,4 @@ single_forward_path.py
 *.pth
 
 t5_pretrained
+test*

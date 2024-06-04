@@ -562,6 +562,7 @@ class DatasetParam(TypedDict):
     total_data_size_per_task: int
     tasks: List[TaskName]
     source: DatasetSource
+    task_frequency: Dict[TaskName, float]
 
 
 class TrainHistory(TypedDict):
