@@ -122,7 +122,8 @@ def get_dataset_param() -> DatasetParam:
             "simple_manipulation",
             "sweep_without_exceeding",
             "twist",
-        ]
+        ],
+        "task_frequency": None,
     }
 
 

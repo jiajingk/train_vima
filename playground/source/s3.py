@@ -156,7 +156,7 @@ def get_train_valid_data_loader(
         local_batch_size: int,
         distributed: bool = False,
         tasks: Optional[List[TaskName]] = None,
-        task_frequency: Dict[TaskName, float] = None, 
+        task_frequency: Optional[Dict[TaskName, float]] = None, 
     ) -> Tuple[DataLoader, DataLoader]:
     train_dataset_address, valid_dataset_address = get_records_addr(
         data_pct_usage = data_pct_usage,
