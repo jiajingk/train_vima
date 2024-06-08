@@ -151,7 +151,6 @@ def prepare_view_obj_list(
             noise_id = max(obj_ids) + 1 + i
             noise_ids.add(noise_id)
             obj_ids.insert(random_index, noise_id)
-        random.shuffle(obj_ids)
     for obj_id in obj_ids:
         if obj_id in noise_ids:
             view_obj = prepare_view_random_noise(

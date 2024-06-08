@@ -91,7 +91,7 @@ def get_latest_csv_logs(remote_ips: List[IPAddress]) -> None:
             "server_ip": remote_ip,
             "username": "ubuntu"
         }
-        pull_latest_file(config, "train_vima", "logs", "train_28_*.csv")
+        pull_latest_file(config, "train_vima", "logs", "*.csv")
     with ThreadPoolExecutor(max_workers=len(remote_ips)) as executor:
         executor.map(
             get_latest_csv_logs_task, remote_ips
@@ -303,16 +303,16 @@ if __name__ == "__main__":
         ip_lists = json.load(f)
     #sync_with_git(ip_lists)
     #get_latest_csv_logs(ip_lists)
-    kill_all_tmux(ip_lists)
-    clean_parent_weight(ip_lists)
-    clean_csv_logs(ip_lists)
+    #kill_all_tmux(ip_lists)
+    #clean_parent_weight(ip_lists)
+    #clean_csv_logs(ip_lists)
     #get_all_csv_logs(ip_lists)
     name = get_latest_weight(ip_lists)
-    sync_with_git(ip_lists)
+    #sync_with_git(ip_lists)
     #fresh_train(ip_lists)
-    put_latest_weight(ip_lists, f'saved_model/{name}')
-    files = [ "train_ddp.py", ".env"]; sync_small_files(ip_lists, files, "train_vima")
-    launch_train(ip_lists, 'continous_from_ckpt')
+    #put_latest_weight(ip_lists, f'saved_model/{name}')
+    #files = [ "train_ddp.py", ".env"]; sync_small_files(ip_lists, files, "train_vima")
+    #launch_train(ip_lists, 'continous_from_ckpt')
     #keep_training_alive(ip_lists, 100)
     #get_all_csv_logs(ip_lists)
     #sync_small_files(ip_lists, ['eval.py'], "train_vima")

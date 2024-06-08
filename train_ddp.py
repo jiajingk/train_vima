@@ -87,9 +87,9 @@ def get_wandb_param():
 def get_lr_param() -> CosAnnealingParam:
     return {
         "warmup_end_at_iters": 7000,
-        "flatten_end_at_iters": 24000000,
-        "lr_decay_end_at_iters": 96000000,
-        "learning_rate": 1e-5,
+        "flatten_end_at_iters": 7000,
+        "lr_decay_end_at_iters": 24000,
+        "learning_rate": 1e-4,
         "min_lr": 1e-7, 
     }
 
@@ -122,29 +122,14 @@ def get_dataset_param() -> DatasetParam:
             "simple_manipulation",
             "sweep_without_exceeding",
             "twist",
-        ],
-        "task_frequency": {
-            "follow_order":  10 / 13 / 12,
-            "manipulate_old_neighbor": 10 / 13 / 12,
-            "novel_adj":  10 / 13 / 12,
-            "novel_noun":  10 / 13 / 12,
-            "pick_in_order_then_restore":  3 / 13,
-            "rearrange_then_restore":  10 / 13 / 12,
-            "rearrange":  10 / 13 / 12,
-            "rotate":  10 / 13 / 12,
-            "same_profile":  10 / 13 / 12,
-            "scene_understanding":  10 / 13 / 12,
-            "simple_manipulation":  10 / 13 / 12,
-            "sweep_without_exceeding":  10 / 13 / 12,
-            "twist":  10 / 13 / 12,
-        }
+        ]
     }
 
 
 def get_train_param() -> TrainParam:
     return {
         "model_size": "2M",
-        "total_epoch": 100,
+        "total_epoch": 10,
         "local_batch_size": 16,
         "distributed": True,
     }
@@ -554,6 +539,8 @@ def write_model_checkpoint(
     ):
     if (get_train_param()["distributed"] is True 
             and get_ddp_param()["local_rank"] != 0):
+        return
+    if get_wandb_param()["project"] == 'test':
         return
     save_file_name = f'{run_id}_{epoch}.ckpt'
     path = os.path.join('..', 'saved_model', save_file_name)
