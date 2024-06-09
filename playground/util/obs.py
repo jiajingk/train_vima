@@ -140,6 +140,7 @@ def prepare_view_obj_list(
         obj_ids: List[int],
         apply_object_augmentation: bool = True
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    obj_ids.sort()
     bboxes = []
     cropped_imgs = []
     n_pad = 0
