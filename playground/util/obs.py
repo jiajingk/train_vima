@@ -140,12 +140,13 @@ def prepare_view_obj_list(
         obj_ids: List[int],
         apply_object_augmentation: bool = True
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    obj_ids.sort() 
+    obj_ids.sort()
     bboxes = []
     cropped_imgs = []
     n_pad = 0
     noise_ids = set()
     if apply_object_augmentation:
+        
         n_arg_objs = cat(2, {0: 0.95, 1: 0.05})
         for i in range(n_arg_objs):
             random_index = np.random.randint(0, len(obj_ids))

@@ -84,7 +84,7 @@ def main(model_path: str, task: TaskName, count: int):
     policy.eval()
     env = create_env(run_config, env_config)
     oracle_agent = env.task.oracle(env)
-    for i in range(364278562389, 364278562389 + count):
+    for i in range(count):
         env.seed(i)
         
         obs = env.reset()
