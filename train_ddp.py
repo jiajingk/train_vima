@@ -89,7 +89,7 @@ def get_lr_param() -> CosAnnealingParam:
         "warmup_end_at_iters": 7000,
         "flatten_end_at_iters": 7000000,
         "lr_decay_end_at_iters": 24000000,
-        "learning_rate": 1e-4,
+        "learning_rate": 1e-5,
         "min_lr": 1e-7, 
     }
 

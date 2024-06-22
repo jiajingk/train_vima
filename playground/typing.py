@@ -268,6 +268,8 @@ class EnvHistory(TypedDict):
     prompt: Optional[str]
     prompt_assets: Optional[Dict[str, PromptAsset]]
     obses: List[ObsData]
+    obs_token_size: int
+    prompt_token_size: int
     
 
 DecodedAction = Union[ContinuousAction, DiscreteAction]

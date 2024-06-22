@@ -28,12 +28,13 @@ from copy import deepcopy
 from tqdm import tqdm
 from datetime import datetime
 import argparse
-
+import time
 np.set_printoptions(2)
 
 OracleAction = Action
 PolicyAction = Action
 ActionTrace = List[Tuple[OracleAction, PolicyAction]]
+PerfTrace = List[Tuple[int, float]]
 
 class FlattenedEvalRecord(TypedDict):
     action_trace: Dict[str, float]
@@ -42,10 +43,13 @@ class FlattenedEvalRecord(TypedDict):
     sucess: Literal[0, 1]
     failure: Literal[0, 1]
     timeout: Literal[0, 1]
+    total_token: int
+    total_time: float
 
 class EvalRecord(TypedDict):
     seed: int
     action_trace: ActionTrace 
+    perf_trace: PerfTrace
     task: str
     prompt: str
     step_count: int
@@ -72,7 +76,7 @@ def main(model_path: str, task: TaskName, count: int):
         display_debug_window=True,
         hide_arm_rgb=False)
     )
-    if '2M' in model_path:
+    if 'M' in model_path:
         prefix = ''
     else:
         prefix = 'module.'
@@ -140,6 +144,7 @@ def fill_traces(eval_records: List[EvalRecord]) -> List[FlattenedEvalRecord]:
             )
         }
     def flatten_trace(eval_record: EvalRecord) -> FlattenedEvalRecord:
+        perf_trace = eval_record.pop("perf_trace")
         return {
             **eval_record,
             "action_trace": flatten_dict({
@@ -149,9 +154,10 @@ def fill_traces(eval_records: List[EvalRecord]) -> List[FlattenedEvalRecord]:
                 } for i, (oracle_action, policy_action) in enumerate(
                     eval_record["action_trace"]
                 )
-            })
+            }),
+            "total_token": sum([x[0] for x in perf_trace]),
+            "total_time": sum([x[1] for x in perf_trace])
         }
-
     return [
         flatten_trace(fill(eval_record, fill_num)) for eval_record in eval_records
     ]
@@ -187,7 +193,13 @@ def to_tensor_action(action: Action) -> Action:
     }
 
 @torch.no_grad()
-def eval_placement_generalization(model_path: str, task: TaskName, num_exp: int, save_folder: str):
+def eval_placement_generalization(
+        model_path: str, 
+        task: TaskName, 
+        num_exp: int, 
+        save_folder: str,
+        seed: int
+    ):
     run_config = RunConfig(
         partition="placement_generalization",
         task=task,
@@ -200,12 +212,12 @@ def eval_placement_generalization(model_path: str, task: TaskName, num_exp: int,
         use_reset_wrapper=True,
         make_config=MakeConfig(modalities=["segm", "rgb"],
         task_kwargs=PARTITION_TO_SPECS["test"][run_config.partition][run_config.task],
-        seed=0,
+        seed=seed,
         render_prompt=False,
         display_debug_window=False,
         hide_arm_rgb=True)
     )
-    if '2M.ckpt' in model_path:
+    if 'M' in model_path:
         prefix = ''
     else:
         prefix = 'module.'
@@ -217,7 +229,7 @@ def eval_placement_generalization(model_path: str, task: TaskName, num_exp: int,
     policy.eval()
     env = create_env(run_config, env_config)
     oracle_agent = env.task.oracle(env)
-    for i in tqdm(range(num_exp)):
+    for i in tqdm(range(seed, seed + num_exp)):
         env.seed(i)
         obs = env.reset()
         history = None
@@ -231,9 +243,12 @@ def eval_placement_generalization(model_path: str, task: TaskName, num_exp: int,
             "step_count": 0,
             "prompt": "",
             "action_trace": [],   
+            "perf_trace": []
         }
         while True:
+            action_start = time.time()
             policy_action, history = step(obs, env, policy, run_config.device, history)
+            action_duration = time.time() - action_start
             oracle_action = oracle_step(obs, env, oracle_agent)
             if oracle_action is None:
                 oracle_action = {
@@ -255,9 +270,22 @@ def eval_placement_generalization(model_path: str, task: TaskName, num_exp: int,
                         policy.discretize_action(to_tensor_action(policy_action))
                     )
                 )
+            if "obs_token_size" in history:
+                eval_record["perf_trace"].append(
+                    (
+                        history["obs_token_size"] + history["prompt_token_size"], action_duration
+                    )
+                )
+            else:
+                eval_record["perf_trace"].append(
+                    (
+                        0, 0.0
+                    )
+                )
             obs, _, done, info = env.step(policy_action)
             eval_record["step_count"] += 1
             info: TaskInfo
+            
             eval_record["prompt"] = info["prompt"]
             eval_record["sucess"] = int(info["success"])
             eval_record["failure"] = int(info["failure"])
@@ -267,7 +295,7 @@ def eval_placement_generalization(model_path: str, task: TaskName, num_exp: int,
                 eval_record["timeout"] = int(False)
             if done:
                 break
-        write_log_to_csv([eval_record], 'run', f'eval_{model_name}', save_folder)
+        write_log_to_csv([eval_record], seed, f'eval_{model_name}', save_folder)
         if (eval_record["failure"] == 0 
             and eval_record["sucess"] == 0
             and eval_record["timeout"] == 0):
@@ -282,11 +310,13 @@ if __name__ == "__main__":
     parser.add_argument("--task", type=str, default="visual_manipulation")
     parser.add_argument("--num_exp", type=int, default=100)
     parser.add_argument("--save", type=str, default='.')
+    parser.add_argument("--seed", type=int, default=0)
     task_param = parser.parse_args()
     eval_placement_generalization(
         task_param.model_path, 
         task_param.task, 
         task_param.num_exp,
-        task_param.save
+        task_param.save,
+        task_param.seed
     )
     #main(task_param.model_path, task_param.task, task_param.num_exp)

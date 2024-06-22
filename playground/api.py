@@ -136,5 +136,7 @@ def step(
         "obs_masks": history["obs_masks"] + [obs_mask_this_step[0][0]],
         "obs_token_embeddings": history["obs_token_embeddings"] + [obs_token_embedding_this_step[0][0]],
         "prompt_mask": prompt_mask_this_task,
-        "prompt_token": prompt_token_this_task
+        "prompt_token": prompt_token_this_task,
+        "obs_token_size": obs_token_embeddings_to_forward.shape[0],
+        "prompt_token_size": prompt_token_this_task.shape[0],
     }
